@@ -58,9 +58,9 @@ struct PROTO6 : Module {
 
 	PROTO6() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(PARAM1_PARAM, 20.f, 20000.f, 1000.f, "freq");
-		configParam(PARAM2_PARAM, 0.f, 60.f, 1.f, "in");
-		configParam(PARAM3_PARAM, 0.f, 30.f, 1.f, "out");
+		configParam(PARAM1_PARAM, 20.f, 20000.f, 20000.f, "freq");
+		configParam(PARAM2_PARAM, 0.f, 120.f, 2.f, "in");
+		configParam(PARAM3_PARAM, 0.f, 1.f, 0.4f, "out");
 		configParam(PARAM4_PARAM, -5.f, 5.f, 0.f, "offset");
 		//configParam(PARAM5_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM6_PARAM, 0.f, 1.f, 0.f, "");
@@ -126,7 +126,7 @@ struct PROTO6 : Module {
 		float x = offset + (inputs[IN1_INPUT].getVoltage() / 5.f * gainParam);
 		float output = outParam * DiodeClipper.processSample (x);
 		//outputs[OUT1_OUTPUT].setVoltage(-output*22.3f); //10.f*2.47524752475f*0.9f
-		outputs[OUT1_OUTPUT].setVoltage(output); //10.f*2.47524752475f*0.9f
+		outputs[OUT1_OUTPUT].setVoltage(output*30.f); //10.f*2.47524752475f*0.9f
 
 	}
 };
