@@ -121,7 +121,7 @@ struct PROTO6 : Module {
     	float outParam = params[PARAM3_PARAM].getValue();
 		float offset = params[PARAM4_PARAM].getValue();
 
-		DiodeClipper.setCircuitParams (freqParam);
+		DiodeClipper.setCircuitParams(freqParam);
 		float x = offset + (inputs[IN1_INPUT].getVoltage() / 5.f * gainParam);
 		float output = outParam * DiodeClipper.processSample (x);
 		outputs[OUT1_OUTPUT].setVoltage(output*50.f);
