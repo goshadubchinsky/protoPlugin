@@ -1,4 +1,4 @@
-build/src/PROTO6.cpp.o: src/PROTO6.cpp src/plugin.hpp \
+build/src/PROTO6x2.cpp.o: src/PROTO6x2.cpp src/plugin.hpp \
  C:/msys64/home/baylarovmurad/Rack/include/rack.hpp \
  C:/msys64/home/baylarovmurad/Rack/include/common.hpp \
  C:/msys64/home/baylarovmurad/Rack/include/arch.hpp \
