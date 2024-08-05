@@ -1,4 +1,4 @@
-build/src/plugin.cpp.o: src/plugin.cpp src/plugin.hpp \
+build/src/PROTO6x8.cpp.o: src/PROTO6x8.cpp src/plugin.hpp \
  C:/msys64/home/beyla/Rack/include/rack.hpp \
  C:/msys64/home/beyla/Rack/include/common.hpp \
  C:/msys64/home/beyla/Rack/include/arch.hpp \
@@ -122,7 +122,8 @@ build/src/plugin.cpp.o: src/plugin.cpp src/plugin.hpp \
  C:/msys64/home/beyla/Rack/include/dsp/vumeter.hpp \
  C:/msys64/home/beyla/Rack/include/dsp/filter.hpp \
  C:/msys64/home/beyla/Rack/include/dsp/digital.hpp \
- C:/msys64/home/beyla/Rack/include/dsp/convert.hpp
+ C:/msys64/home/beyla/Rack/include/dsp/convert.hpp \
+ src/chowdsp/diode_clipper_wdf.h src/chowdsp/chowdsp_wdf.h
 src/plugin.hpp:
 C:/msys64/home/beyla/Rack/include/rack.hpp:
 C:/msys64/home/beyla/Rack/include/common.hpp:
@@ -248,3 +249,5 @@ C:/msys64/home/beyla/Rack/include/dsp/vumeter.hpp:
 C:/msys64/home/beyla/Rack/include/dsp/filter.hpp:
 C:/msys64/home/beyla/Rack/include/dsp/digital.hpp:
 C:/msys64/home/beyla/Rack/include/dsp/convert.hpp:
+src/chowdsp/diode_clipper_wdf.h:
+src/chowdsp/chowdsp_wdf.h:

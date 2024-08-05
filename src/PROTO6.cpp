@@ -8,8 +8,8 @@ struct PROTO6 : Module {
 		PARAM2_PARAM,
 		PARAM3_PARAM,
 		PARAM4_PARAM,
-		//PARAM5_PARAM,
-		//PARAM6_PARAM,
+		PARAM5_PARAM,
+		PARAM6_PARAM,
 		//PARAM7_PARAM,
 		//PARAM8_PARAM,
 		//PARAM9_PARAM,
@@ -58,12 +58,12 @@ struct PROTO6 : Module {
 
 	PROTO6() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(PARAM1_PARAM, 20.f, 20000.f, 20000.f, "freq");
-		configParam(PARAM2_PARAM, 0.f, 120.f, 1.f, "in");
-		configParam(PARAM3_PARAM, 0.f, 1.f, 0.4f, "out");
+		configParam(PARAM1_PARAM, 20.f, 20000.f, 1000.f, "freq");
+		configParam(PARAM2_PARAM, 0.f, 30.f, 3.5f, "in");
+		configParam(PARAM3_PARAM, 0.f, 5.f, 1.f, "out");
 		configParam(PARAM4_PARAM, -5.f, 5.f, 0.f, "offset");
-		//configParam(PARAM5_PARAM, 0.f, 1.f, 0.f, "");
-		//configParam(PARAM6_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(PARAM5_PARAM, 0.f, 2.f, 0.f, "Diode Type"); getParamQuantity(PARAM5_PARAM)->snapEnabled = true;
+		configParam(PARAM6_PARAM, 0.f, 10.f, 0.f, "soft");
 		//configParam(PARAM7_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM8_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM9_PARAM, 0.f, 1.f, 0.f, "");
@@ -116,15 +116,19 @@ struct PROTO6 : Module {
 
 		DiodeClipper.prepare(args.sampleRate);
 
-		float freqParam = params[PARAM1_PARAM].getValue();
+		//float freqParam = (float)args.sampleRate/2.f;
+		float freqParam = (float)args.sampleRate/2.f;
     	float gainParam = params[PARAM2_PARAM].getValue();
     	float outParam = params[PARAM3_PARAM].getValue();
 		float offset = params[PARAM4_PARAM].getValue();
-
-		DiodeClipper.setCircuitParams(freqParam);
-		float x = offset + (inputs[IN1_INPUT].getVoltage() / 5.f * gainParam);
+		float diodeTypeNumber = params[PARAM5_PARAM].getValue();
+		DiodeClipper.setDiodeType((int)diodeTypeNumber);
+		DiodeClipper.setCircuitParams (freqParam);
+		float x = offset + (inputs[IN1_INPUT].getVoltage() * gainParam);
 		float output = outParam * DiodeClipper.processSample (x);
-		outputs[OUT1_OUTPUT].setVoltage(output*50.f);
+		
+		//outputs[OUT1_OUTPUT].setVoltage(-output*22.3f); //10.f*2.47524752475f*0.9f
+		outputs[OUT1_OUTPUT].setVoltage(clamp(-output, -10.f, 10.f)); //10.f*2.47524752475f*0.9f
 
 	}
 };
@@ -144,8 +148,8 @@ struct PROTO6Widget : ModuleWidget {
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(39.624, 12.85)), module, PROTO6::PARAM2_PARAM));
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(66.04, 12.85)), module, PROTO6::PARAM3_PARAM));
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 12.85)), module, PROTO6::PARAM4_PARAM));
-		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(118.872, 12.85)), module, PROTO6::PARAM5_PARAM));
-		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(13.208, 38.55)), module, PROTO6::PARAM6_PARAM));
+		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(118.872, 12.85)), module, PROTO6::PARAM5_PARAM));
+		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(13.208, 38.55)), module, PROTO6::PARAM6_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(39.624, 38.55)), module, PROTO6::PARAM7_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(66.04, 38.55)), module, PROTO6::PARAM8_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 38.55)), module, PROTO6::PARAM9_PARAM));
