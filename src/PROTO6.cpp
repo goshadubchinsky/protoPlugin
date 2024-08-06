@@ -1,6 +1,4 @@
 #include "plugin.hpp"
-#include "chowdsp/diode_clipper_wdf.h"
-
 
 struct PROTO6 : Module {
 	enum ParamId {
@@ -100,35 +98,7 @@ struct PROTO6 : Module {
 		//configOutput(OUT5_OUTPUT, "");
 	}
 
-	DiodeClipper DiodeClipper;
-
-	void onSampleRateChange() override
-	{
-		DiodeClipper.reset();
-	}
-
-	void onReset() override
-	{
-		DiodeClipper.reset();
-	}
-
 	void process(const ProcessArgs& args) override {
-
-		DiodeClipper.prepare(args.sampleRate);
-
-		//float freqParam = (float)args.sampleRate/2.f;
-		float freqParam = (float)args.sampleRate/2.f;
-    	float gainParam = params[PARAM2_PARAM].getValue();
-    	float outParam = params[PARAM3_PARAM].getValue();
-		float offset = params[PARAM4_PARAM].getValue();
-		float diodeTypeNumber = params[PARAM5_PARAM].getValue();
-		DiodeClipper.setDiodeType((int)diodeTypeNumber);
-		DiodeClipper.setCircuitParams (freqParam);
-		float x = offset + (inputs[IN1_INPUT].getVoltage() * gainParam);
-		float output = outParam * DiodeClipper.processSample (x);
-		
-		//outputs[OUT1_OUTPUT].setVoltage(-output*22.3f); //10.f*2.47524752475f*0.9f
-		outputs[OUT1_OUTPUT].setVoltage(clamp(-output, -10.f, 10.f)); //10.f*2.47524752475f*0.9f
 
 	}
 };

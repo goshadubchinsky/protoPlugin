@@ -1,6 +1,4 @@
 #include "plugin.hpp"
-#include "chowdsp/diode_clipper_wdf.h"
-
 
 struct PROTO6x2 : Module {
 	enum ParamId {
@@ -100,55 +98,8 @@ struct PROTO6x2 : Module {
 		//configOutput(OUT5_OUTPUT, "");
 	}
 
-	DiodeClipper DiodeClipper;
-
-	void onSampleRateChange() override
-	{
-		DiodeClipper.reset();
-	}
-
-	void onReset() override
-	{
-		DiodeClipper.reset();
-	}
-
-	static const int UPSAMPLE = 8;
-	static const int QUALITY = 4;
-	dsp::Upsampler<UPSAMPLE, QUALITY> upsampler;
-    dsp::Decimator<UPSAMPLE, QUALITY> decimator;
-
-	float upsampled[UPSAMPLE];
-	float processed[UPSAMPLE];
-
 	void process(const ProcessArgs& args) override {
 		
-		float input = inputs[IN1_INPUT].getVoltage();
-        upsampler.process(input, upsampled);
-
-		DiodeClipper.prepare(UPSAMPLE*args.sampleRate);
-
-		//float freqParam = (float)args.sampleRate/2.f;
-		float freqParam = (float)args.sampleRate*UPSAMPLE/2.f;
-    	float gainParam = params[PARAM2_PARAM].getValue();
-    	float outParam = params[PARAM3_PARAM].getValue();
-		float offset = params[PARAM4_PARAM].getValue();
-		float diodeTypeNumber = params[PARAM5_PARAM].getValue();
-		DiodeClipper.setDiodeType((int)diodeTypeNumber);
-		DiodeClipper.setCircuitParams (freqParam);
-		//x = offset + (inputs[IN1_INPUT].getVoltage() * gainParam);
-		//float output = outParam * DiodeClipper.processSample (x);
-
-		for (int i = 0; i < UPSAMPLE; ++i)
-		{
-			float x1 = upsampled[i] * gainParam + offset;
-			processed[i] = DiodeClipper.processSample(x1);
-		}
-
-		float output = outParam * decimator.process(processed);
-		
-		//outputs[OUT1_OUTPUT].setVoltage(-output*22.3f); //10.f*2.47524752475f*0.9f
-		outputs[OUT1_OUTPUT].setVoltage(clamp(-output, -10.f, 10.f)); //10.f*2.47524752475f*0.9f
-
 	}
 };
 

@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-#include <xsimd/xsimd.hpp>
 #include "chowdsp/diode_clipper_wdf.h"
 
 //MAIN
@@ -68,7 +67,7 @@ struct PROTO6x8 : Module {
 		configParam(PARAM4_PARAM, -10.f, 10.f, 0.f, "offset");
 		configParam(PARAM5_PARAM, 0.f, 2.f, 0.f, "Diode Type"); getParamQuantity(PARAM5_PARAM)->snapEnabled = true;
 		configParam(PARAM6_PARAM, 0.f, 10.f, 0.f, "soft");
-		configParam(PARAM7_PARAM, 0.f, 1.f, 0.f, "gain CV");
+		configParam(PARAM7_PARAM, 0.f, 1.f, 1.f, "gain CV");
 		//configParam(PARAM8_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM9_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM10_PARAM, 0.f, 1.f, 0.f, "");
@@ -116,8 +115,8 @@ struct PROTO6x8 : Module {
 		DiodeClipper.reset();
 	}
 
-	static const int UPSAMPLE = 8;
-	static const int QUALITY = 4;
+	static const int UPSAMPLE = 8; // alt 4
+	static const int QUALITY = 8;
 	dsp::Upsampler<UPSAMPLE, QUALITY> upsampler;
     dsp::Decimator<UPSAMPLE, QUALITY> decimator;
 	float upsampled[UPSAMPLE];
@@ -128,25 +127,15 @@ struct PROTO6x8 : Module {
 	float gainCV{0.f};
 	float outParam{0.f};
 	float offset{0.f};
-	float diodeTypeNumber{0.f};
 
 	void process(const ProcessArgs& args) override {
 
 		if (inputs[IN1_INPUT].isConnected())
 		{
-			//int channels = inputs[IN1_INPUT].getChannels();
-			//
-			//
-			//for (int c = 0; c < channels; c++)
-			//{
-			//	float preInput = inputs[IN1_INPUT].getPolyVoltage(c);
-			//}
-
-
-
 			DiodeClipper.prepare(UPSAMPLE*args.sampleRate);
+			//DiodeClipper.prepare(args.sampleRate);
 			processEveryNsamples(args);
-			float input = 1.5f *inputs[IN1_INPUT].getVoltageSum();
+			float input = 0.696f * 1.5f *inputs[IN1_INPUT].getVoltageSum();
         	upsampler.process(input, upsampled);
 			for (int i = 0; i < UPSAMPLE; ++i)
 			{
@@ -163,28 +152,21 @@ struct PROTO6x8 : Module {
 			{
 				lights[LIGHT_LIGHT].setBrightness(0.f);
 			}
-			
 		}
 	}
 
 	void processEveryNsamples(const ProcessArgs& args)
 	{	
 		gainParam = params[PARAM2_PARAM].getValue();
-
 		if (inputs[CV1_INPUT].isConnected())
 		{
 			gainCV = inputs[CV1_INPUT].getVoltage()/10.f*params[PARAM7_PARAM].getValue();
 			gainParam *= gainCV;
 		}
-
 		freqParam = (float)args.sampleRate*UPSAMPLE/2.f;
     	outParam = params[PARAM3_PARAM].getValue();
 		offset = params[PARAM4_PARAM].getValue();
-		diodeTypeNumber = params[PARAM5_PARAM].getValue();
-		DiodeClipper.setDiodeType((int)diodeTypeNumber);
 		DiodeClipper.setCircuitParams (freqParam);	
-
-		//DiodeClipper.prepare(UPSAMPLE*args.sampleRate);	
 	}
 };
 
