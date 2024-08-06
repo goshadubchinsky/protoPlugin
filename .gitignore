@@ -3,7 +3,6 @@
 
 # Ignore a specific file
 secret_config.json
-Makefile
 
 # Ignore all files in a directory
 /build/
