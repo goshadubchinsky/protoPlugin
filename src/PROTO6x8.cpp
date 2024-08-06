@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include <xsimd/xsimd.hpp>
 #include "chowdsp/diode_clipper_wdf.h"
 
 //MAIN
@@ -55,6 +56,7 @@ struct PROTO6x8 : Module {
 		OUTPUTS_LEN
 	};
 	enum LightId {
+		LIGHT_LIGHT,
 		LIGHTS_LEN
 	};
 
@@ -62,7 +64,7 @@ struct PROTO6x8 : Module {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configParam(PARAM1_PARAM, 20.f, 20000.f, 1000.f, "freq");
 		configParam(PARAM2_PARAM, 0.f, 30.f, 1.f, "in");
-		configParam(PARAM3_PARAM, 0.f, 5.f, 1.f, "out");
+		configParam(PARAM3_PARAM, 0.f, 2.f, 1.f, "out");
 		configParam(PARAM4_PARAM, -10.f, 10.f, 0.f, "offset");
 		configParam(PARAM5_PARAM, 0.f, 2.f, 0.f, "Diode Type"); getParamQuantity(PARAM5_PARAM)->snapEnabled = true;
 		configParam(PARAM6_PARAM, 0.f, 10.f, 0.f, "soft");
@@ -118,13 +120,9 @@ struct PROTO6x8 : Module {
 	static const int QUALITY = 4;
 	dsp::Upsampler<UPSAMPLE, QUALITY> upsampler;
     dsp::Decimator<UPSAMPLE, QUALITY> decimator;
-
 	float upsampled[UPSAMPLE];
 	float processed[UPSAMPLE];
-	//int N{32}; //PROCESS EVERY 32 SAMPLES
-
 	int loopCounter = 0;
-
 	float freqParam{0.f};
 	float gainParam{0.f};
 	float gainCV{0.f};
@@ -134,45 +132,60 @@ struct PROTO6x8 : Module {
 
 	void process(const ProcessArgs& args) override {
 
-		DiodeClipper.prepare(UPSAMPLE*args.sampleRate);
-
-		//if (loopCounter-- == 0)				//PROCESS EVERY 32 SAMPLES
-		//{										//PROCESS EVERY 32 SAMPLES
-        //    loopCounter = N-1;				//PROCESS EVERY 32 SAMPLES
-        //    processEveryNsamples(args);		//PROCESS EVERY 32 SAMPLES
-		//}
-
-		processEveryNsamples(args);
-		
-		float input = 1.5f *inputs[IN1_INPUT].getVoltage();
-
-        upsampler.process(input, upsampled);
-
-		for (int i = 0; i < UPSAMPLE; ++i)
+		if (inputs[IN1_INPUT].isConnected())
 		{
-			float x1 = upsampled[i] * gainParam + offset;
-			processed[i] = DiodeClipper.processSample(x1);
+			//int channels = inputs[IN1_INPUT].getChannels();
+			//
+			//
+			//for (int c = 0; c < channels; c++)
+			//{
+			//	float preInput = inputs[IN1_INPUT].getPolyVoltage(c);
+			//}
+
+
+
+			DiodeClipper.prepare(UPSAMPLE*args.sampleRate);
+			processEveryNsamples(args);
+			float input = 1.5f *inputs[IN1_INPUT].getVoltageSum();
+        	upsampler.process(input, upsampled);
+			for (int i = 0; i < UPSAMPLE; ++i)
+			{
+				float x1 = upsampled[i] * gainParam + offset;
+				processed[i] = DiodeClipper.processSample(x1);
+			}
+			float output = outParam * decimator.process(processed);
+			outputs[OUT1_OUTPUT].setVoltage(clamp(-output, -10.f, 10.f));
+			if (std::fabs(output) >= 10.f)
+			{
+				lights[LIGHT_LIGHT].setBrightness(1.f);
+			}
+			else
+			{
+				lights[LIGHT_LIGHT].setBrightness(0.f);
+			}
+			
 		}
-
-		float output = outParam * decimator.process(processed);
-		
-		outputs[OUT1_OUTPUT].setVoltage(clamp(-output, -10.f, 10.f));
-
 	}
 
 	void processEveryNsamples(const ProcessArgs& args)
-	{
-		//DiodeClipper.prepare(UPSAMPLE*args.sampleRate);
-		gainCV = params[PARAM7_PARAM].getValue() * inputs[CV1_INPUT].getVoltage()/10.f;
+	{	
+		gainParam = params[PARAM2_PARAM].getValue();
+
+		if (inputs[CV1_INPUT].isConnected())
+		{
+			gainCV = inputs[CV1_INPUT].getVoltage()/10.f*params[PARAM7_PARAM].getValue();
+			gainParam *= gainCV;
+		}
+
 		freqParam = (float)args.sampleRate*UPSAMPLE/2.f;
-    	gainParam = gainCV * params[PARAM2_PARAM].getValue();
     	outParam = params[PARAM3_PARAM].getValue();
 		offset = params[PARAM4_PARAM].getValue();
 		diodeTypeNumber = params[PARAM5_PARAM].getValue();
 		DiodeClipper.setDiodeType((int)diodeTypeNumber);
-		DiodeClipper.setCircuitParams (freqParam);		
-	}
+		DiodeClipper.setCircuitParams (freqParam);	
 
+		//DiodeClipper.prepare(UPSAMPLE*args.sampleRate);	
+	}
 };
 
 
@@ -208,6 +221,7 @@ struct PROTO6x8Widget : ModuleWidget {
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 77.1)), module, PROTO6x8::CV4_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(118.872, 77.1)), module, PROTO6x8::CV5_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 86.171)), module, PROTO6x8::CV6_INPUT));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(13.208, 86.171)), module, PROTO6x8::LIGHT_LIGHT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 86.171)), module, PROTO6x8::CV7_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 86.171)), module, PROTO6x8::CV8_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 86.171)), module, PROTO6x8::CV9_INPUT));
