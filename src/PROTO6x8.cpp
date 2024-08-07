@@ -105,16 +105,6 @@ struct PROTO6x8 : Module {
 
 	DiodeClipper DiodeClipper;
 
-	void onSampleRateChange() override
-	{
-		DiodeClipper.reset();
-	}
-
-	void onReset() override
-	{
-		DiodeClipper.reset();
-	}
-
 	static const int UPSAMPLE = 8; // alt 4
 	static const int QUALITY = 8;
 	dsp::Upsampler<UPSAMPLE, QUALITY> upsampler;
@@ -128,14 +118,34 @@ struct PROTO6x8 : Module {
 	float outParam{0.f};
 	float offset{0.f};
 
+	void onAdd (const AddEvent &e) override
+	{
+		DiodeClipper.prepare(UPSAMPLE * (APP->engine->getSampleRate()) );
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override
+	{
+		DiodeClipper.reset();
+		DiodeClipper.prepare(UPSAMPLE * (APP->engine->getSampleRate()) );
+	}
+	
+	void onReset(const ResetEvent &e) override
+	{
+		DiodeClipper.reset();
+		DiodeClipper.prepare(UPSAMPLE * (APP->engine->getSampleRate()) );
+	}
+
 	void process(const ProcessArgs& args) override {
 
 		if (inputs[IN1_INPUT].isConnected())
 		{
-			DiodeClipper.prepare(UPSAMPLE*args.sampleRate);
+			
 			//DiodeClipper.prepare(args.sampleRate);
 			processEveryNsamples(args);
-			float input = 0.696f * 1.5f *inputs[IN1_INPUT].getVoltageSum();
+			float input = 0.696f * 1.5f *inputs[IN1_INPUT].getVoltageSum(); //x8
+			//float input = 0.733f * 1.5f *inputs[IN1_INPUT].getVoltageSum(); //x4
+			//float input = 0.820f * 1.5f *inputs[IN1_INPUT].getVoltageSum(); //x2
+			//float input = 1.104f * 1.5f *inputs[IN1_INPUT].getVoltageSum(); //x1
         	upsampler.process(input, upsampled);
 			for (int i = 0; i < UPSAMPLE; ++i)
 			{
