@@ -58,5 +58,6 @@ struct BefacoSwitchHorizontal : rack::app::SvgSwitch {
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/BefacoSwitchHoriz_0.svg")));
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/BefacoSwitchHoriz_1.svg")));
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/BefacoSwitchHoriz_2.svg")));
+        shadow->opacity = 0;
 	}
 };
