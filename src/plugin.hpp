@@ -52,3 +52,11 @@ struct WhiteKnob15 : RoundKnob {
         /// shadow->opacity = 0;
     }
 };
+
+struct BefacoSwitchHorizontal : rack::app::SvgSwitch {
+	BefacoSwitchHorizontal() {
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/BefacoSwitchHoriz_0.svg")));
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/BefacoSwitchHoriz_1.svg")));
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/BefacoSwitchHoriz_2.svg")));
+	}
+};

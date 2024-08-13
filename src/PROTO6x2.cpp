@@ -18,7 +18,7 @@ struct PROTO6x2 : Module {
 		//PARAM13_PARAM,
 		//PARAM14_PARAM,
 		//PARAM15_PARAM,
-		PUSH_PARAM,
+		RANGE_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -70,13 +70,14 @@ struct PROTO6x2 : Module {
 		const float defaultFreq = (std::log2(defaultFreqHz / dsp::FREQ_C4) + 5) / 10;
 
 		configParam(PARAM1_PARAM,  minFreq, maxFreq, defaultFreq, "Cutoff frequency", " Hz", std::pow(2, 10.f), dsp::FREQ_C4 / std::pow(2, 5.f));
-		configParam(PARAM2_PARAM, 0.f, 30.f, 1.f, "in");
+		configParam(PARAM2_PARAM, 0.f, 10.f, 1.f, "in");
 		configParam(PARAM3_PARAM, 0.f, 2.f, 1.f, "out");
 		configParam(PARAM4_PARAM, -10.f, 10.f, 0.f, "offset");
 		//configParam(PARAM5_PARAM, 0.f, 2.f, 0.f, "Diode Type"); getParamQuantity(PARAM5_PARAM)->snapEnabled = true;
 		//configParam(PARAM6_PARAM, 0.f, 10.f, 0.f, "soft");
 		configParam(PARAM7_PARAM, 0.f, 1.f, 1.f, "CV");
-		configButton(PUSH_PARAM, "Push");
+		configSwitch(RANGE_PARAM, 1.f, 3.f, 1.f, "RANGE", {"L", "M", "H"});
+			paramQuantities[RANGE_PARAM]->snapEnabled = true;
 		//configParam(PARAM8_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM9_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM10_PARAM, 0.f, 1.f, 0.f, "");
@@ -115,7 +116,7 @@ struct PROTO6x2 : Module {
 	}
 
 	// INPUTS+p
-	float input{0.f}; float input_param{1.f};
+	float input{0.f}; float input_param{1.f}; float range_param{1.f};
 	float input_cv{0.f}; float input_cv_param{0.f};
 	
 	// OUTPUTS+p
@@ -161,7 +162,10 @@ struct PROTO6x2 : Module {
 
 		if (inputs[IN1_INPUT].isConnected())
 		{
+			range_param = params[RANGE_PARAM].getValue();
 			input_param = params[PARAM2_PARAM].getValue();
+			input_param *= range_param;
+			
 			
 			
 			if (inputs[CV1_INPUT].isConnected())
@@ -192,16 +196,10 @@ struct PROTO6x2 : Module {
 			output = output_param * decimator.process(processed);
 			outputs[OUT1_OUTPUT].setVoltage(clamp(-output, -10.f, 10.f));
 
-			bool push = (params[PUSH_PARAM].getValue() > 0.f);
-			lights[PUSH_LIGHT].setBrightness(push);
-
 			gate_length = 0.1f;
-
 			float sample_time = args.sampleTime;
-
 			if (std::fabs(output) >= 10.f)
 			{gateGenerator.trigger(gate_length);}
-
 			lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(sample_time));
 
 			
@@ -248,7 +246,9 @@ struct PROTO6x2Widget : ModuleWidget {
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 86.171)), module, PROTO6x2::CV9_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(118.872, 86.171)), module, PROTO6x2::CV10_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 95.242)), module, PROTO6x2::CV11_INPUT));
-		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(13.208, 95.242)), module, PROTO6x2::PUSH_PARAM, PROTO6x2::PUSH_LIGHT));
+		//addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(13.208, 95.242)), module, PROTO6x2::RANGE_PARAM, PROTO6x2::PUSH_LIGHT));
+		addParam(createParamCentered<BefacoSwitchHorizontal>(mm2px(Vec(13.208, 38.55)),  module, PROTO6x2::RANGE_PARAM));
+
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 95.242)), module, PROTO6x2::CV12_INPUT));
 		
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 95.242)), module, PROTO6x2::CV13_INPUT));
