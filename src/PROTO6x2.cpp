@@ -138,6 +138,10 @@ struct PROTO6x2 : Module {
 	//OTHER
 	//int loopCounter = 0;
 
+	float gate_length{0.f};
+	rack::dsp::PulseGenerator gateGenerator;
+
+
 	void onAdd (const AddEvent &e) override
 	{
 		diode_clipper.setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);
@@ -191,10 +195,14 @@ struct PROTO6x2 : Module {
 			bool push = (params[PUSH_PARAM].getValue() > 0.f);
 			lights[PUSH_LIGHT].setBrightness(push);
 
-			if (std::fabs(output) >= 10.f && !push)
-			{lights[LIGHT_LIGHT].setBrightness(1.f);}
-			else if (push)
-			{lights[LIGHT_LIGHT].setBrightness(0.f);}
+			gate_length = 0.1f;
+
+			float sample_time = args.sampleTime;
+
+			if (std::fabs(output) >= 10.f)
+			{gateGenerator.trigger(gate_length);}
+
+			lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(sample_time));
 
 			
 		}	
