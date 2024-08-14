@@ -1,0 +1,27 @@
+#include "plugin.hpp"
+
+
+static const int UPSAMPLE = 8;
+static const int QUALITY = 8;
+dsp::Upsampler<UPSAMPLE, QUALITY> upsampler;
+dsp::Decimator<UPSAMPLE, QUALITY> decimator;
+
+int channels = 2;
+
+float upsampled[channels][UPSAMPLE];
+float processed[channels][UPSAMPLE];
+
+float input[channels] = {0.f};
+float output[channels] = {0.f};
+
+for ( for int c = 0; c = channels; ++c)
+{
+    upsampler.process(input[c], upsampled[c]);
+
+    for (int u = 0; u < UPSAMPLE; ++u)
+		{
+			processed[c][u] = diode_clipper.processSample(upsampled[c][u]);
+		}
+
+    output[c] = output_param * decimator.process(processed[c]);
+}

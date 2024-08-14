@@ -2,6 +2,7 @@
 #define DIODECLIPPER_H_INCLUDED
 
 #include "cmath"
+//#include <xsimd/xsimd.hpp>
 #include "chowdsp_wdf.h"
 
 using namespace chowdsp::wdft;

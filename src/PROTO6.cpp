@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "chowdsp/diode_clipper_wdf_class.h"
 
 struct PROTO6 : Module {
 	enum ParamId {
@@ -7,8 +8,8 @@ struct PROTO6 : Module {
 		PARAM3_PARAM,
 		PARAM4_PARAM,
 		PARAM5_PARAM,
-		PARAM6_PARAM,
-		//PARAM7_PARAM,
+		//PARAM6_PARAM,
+		PARAM7_PARAM,
 		//PARAM8_PARAM,
 		//PARAM9_PARAM,
 		//PARAM10_PARAM,
@@ -17,10 +18,11 @@ struct PROTO6 : Module {
 		//PARAM13_PARAM,
 		//PARAM14_PARAM,
 		//PARAM15_PARAM,
+		RANGE_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
-		//CV1_INPUT,
+		CV1_INPUT,
 		//CV2_INPUT,
 		//CV3_INPUT,
 		//CV4_INPUT,
@@ -35,34 +37,47 @@ struct PROTO6 : Module {
 		//CV13_INPUT,
 		//CV14_INPUT,
 		//CV15_INPUT,
-		IN1_INPUT,
-		//IN2_INPUT,
+		ENUMS(IN_INPUT, 2),
 		//IN3_INPUT,
 		//IN4_INPUT,
 		//IN5_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
-		OUT1_OUTPUT,
-		//OUT2_OUTPUT,
+		ENUMS(OUT_OUTPUT, 2),
 		//OUT3_OUTPUT,
 		//OUT4_OUTPUT,
 		//OUT5_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
+		LIGHT_LIGHT,
+		PUSH_LIGHT,
 		LIGHTS_LEN
 	};
 
 	PROTO6() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(PARAM1_PARAM, 20.f, 20000.f, 1000.f, "freq");
-		configParam(PARAM2_PARAM, 0.f, 30.f, 3.5f, "in");
-		configParam(PARAM3_PARAM, 0.f, 5.f, 1.f, "out");
-		configParam(PARAM4_PARAM, -5.f, 5.f, 0.f, "offset");
-		configParam(PARAM5_PARAM, 0.f, 2.f, 0.f, "Diode Type"); getParamQuantity(PARAM5_PARAM)->snapEnabled = true;
-		configParam(PARAM6_PARAM, 0.f, 10.f, 0.f, "soft");
-		//configParam(PARAM7_PARAM, 0.f, 1.f, 0.f, "");
+
+		const float minFreqHz = 16.0f;
+		const float maxFreqHz = 22000.0f;
+		//const float defaultFreqHz = 1000.0f;
+
+		const float minFreq = (std::log2(minFreqHz / dsp::FREQ_C4) + 5) / 10;
+		const float maxFreq = (std::log2(maxFreqHz / dsp::FREQ_C4) + 5) / 10;
+		//const float defaultFreq = (std::log2(defaultFreqHz / dsp::FREQ_C4) + 5) / 10;
+
+		configParam(PARAM1_PARAM,  minFreq, maxFreq, maxFreq, "Cutoff frequency", " Hz", std::pow(2, 10.f), dsp::FREQ_C4 / std::pow(2, 5.f));
+		configParam(PARAM2_PARAM, 0.f, 10.f, 1.f, "in");
+			//paramQuantities[PARAM2_PARAM]->displayBase = -2.f;
+			//paramQuantities[PARAM2_PARAM]->displayOffset = -1.f;
+		configParam(PARAM3_PARAM, 0.f, 2.f, 1.f, "out");
+		configParam(PARAM4_PARAM, -10.f, 10.f, 0.f, "offset");
+		configParam(PARAM5_PARAM, -50.f, 50.f, 0.f, "Stereo Offset");
+		//configParam(PARAM6_PARAM, 0.f, 10.f, 0.f, "soft");
+		configParam(PARAM7_PARAM, 0.f, 1.f, 1.f, "CV");
+		configSwitch(RANGE_PARAM, 1.f, 3.f, 1.f, "RANGE", {"L", "M", "H"});
+			paramQuantities[RANGE_PARAM]->snapEnabled = true;
 		//configParam(PARAM8_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM9_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM10_PARAM, 0.f, 1.f, 0.f, "");
@@ -71,7 +86,7 @@ struct PROTO6 : Module {
 		//configParam(PARAM13_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM14_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM15_PARAM, 0.f, 1.f, 0.f, "");
-		//configInput(CV1_INPUT, "");
+		configInput(CV1_INPUT, "CV INPUT");
 		//configInput(CV2_INPUT, "");
 		//configInput(CV3_INPUT, "");
 		//configInput(CV4_INPUT, "");
@@ -86,20 +101,154 @@ struct PROTO6 : Module {
 		//configInput(CV13_INPUT, "");
 		//configInput(CV14_INPUT, "");
 		//configInput(CV15_INPUT, "");
-		configInput(IN1_INPUT, "in");
-		//configInput(IN2_INPUT, "");
+		configInput(IN_INPUT + 0, "in L");
+		configInput(IN_INPUT + 1, "in R");
 		//configInput(IN3_INPUT, "");
 		//configInput(IN4_INPUT, "");
 		//configInput(IN5_INPUT, "");
-		configOutput(OUT1_OUTPUT, "out");
-		//configOutput(OUT2_OUTPUT, "");
+		configOutput(OUT_OUTPUT + 0, "out L");
+		configOutput(OUT_OUTPUT + 1, "out R");
 		//configOutput(OUT3_OUTPUT, "");
 		//configOutput(OUT4_OUTPUT, "");
 		//configOutput(OUT5_OUTPUT, "");
+
+		configBypass(IN_INPUT + 0, OUT_OUTPUT + 0);
+		configBypass(IN_INPUT + 1, OUT_OUTPUT + 1);
 	}
+
+	// channels
+	static const int channels = 2;
+	// INPUTS+p
+	float input[channels] = {0.f};
+	float input_param{1.f}; float range_param{1.f};
+	float input_cv{0.f}; float input_cv_param{0.f};
+	
+	// OUTPUTS+p
+	float output[channels] = {0.f};
+	float output_param{1.f};
+
+	// PARAMS
+	float offset_param{0.f};
+	float stereo_offset_param[channels] = {0.f};
+
+	// OVERSAMPLE
+	static const int UPSAMPLE = 8;
+	static const int QUALITY = 8;
+	dsp::Upsampler<UPSAMPLE, QUALITY> upsampler[channels];
+    dsp::Decimator<UPSAMPLE, QUALITY> decimator[channels];
+	float upsampled[channels][UPSAMPLE];
+	float processed[channels][UPSAMPLE];
+
+	//CLASSES
+	DiodeClipper diode_clipper[channels];
+	
+	//OTHER
+	//int loopCounter = 0;
+
+	float gate_length{0.f};
+	rack::dsp::PulseGenerator gateGenerator;
+
+
+	void onAdd (const AddEvent &e) override
+	{
+		for (int c = 0; c < channels; ++c)
+		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);}
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override
+	{
+		for (int c = 0; c < channels; ++c)
+		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);}
+	}
+
+	//void onReset(const ResetEvent &e) override
+	//{
+	//	for (int c = 0; c < channels; ++c)
+	//	{diode_clipper[c].reset();}
+	//}
 
 	void process(const ProcessArgs& args) override {
 
+		if (inputs[IN_INPUT + 0].isConnected() || inputs[IN_INPUT + 1].isConnected())
+		{
+			range_param = params[RANGE_PARAM].getValue();
+			input_param = params[PARAM2_PARAM].getValue();
+			input_param *= range_param;
+			
+			
+			
+			if (inputs[CV1_INPUT].isConnected())
+			{
+			input_cv_param = params[PARAM7_PARAM].getValue() * 0.1f;
+			input_cv = input_cv_param * (inputs[CV1_INPUT].getVoltage());
+			input_param *= input_cv;
+			}
+
+			output_param = params[PARAM3_PARAM].getValue();
+			offset_param = params[PARAM4_PARAM].getValue();
+			stereo_offset_param[0] = params[PARAM5_PARAM].getValue();
+			stereo_offset_param[1] = - params[PARAM5_PARAM].getValue();
+
+			float cutoff = params[PARAM1_PARAM].getValue();
+			cutoff *= 10.f - 5.f;
+			cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff);
+			cutoff = clamp(cutoff, 16.f, args.sampleRate / 2.f );
+
+			
+			if (outputs[OUT_OUTPUT+0].isConnected() && outputs[OUT_OUTPUT+1].isConnected())
+			{
+				for (int c = 0; c < channels; ++c)
+				{
+					diode_clipper[c].setCircuitParams(input_param, offset_param + stereo_offset_param[c], cutoff);
+					input[c] = inputs[IN_INPUT + c].getVoltageSum();
+					upsampler[c].process(input[c], upsampled[c]);
+
+					for (int u = 0; u < UPSAMPLE; ++u)
+					{
+						processed[c][u] = diode_clipper[c].processSample(upsampled[c][u]);
+					}
+
+					output[c] = output_param * decimator[c].process(processed[c]);
+					outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
+				}
+			}
+			else if (outputs[OUT_OUTPUT+0].isConnected() && !outputs[OUT_OUTPUT+1].isConnected())
+			{
+				diode_clipper[0].setCircuitParams(input_param, offset_param, cutoff);
+				input[0] = inputs[IN_INPUT + 0].getVoltageSum();
+				upsampler[0].process(input[0], upsampled[0]);
+				for (int u = 0; u < UPSAMPLE; ++u)
+					{
+						processed[0][u] = diode_clipper[0].processSample(upsampled[0][u]);
+					}
+
+				output[0] = output_param * decimator[0].process(processed[0]);
+				outputs[OUT_OUTPUT + 0].setVoltage(clamp(-output[0], -10.f, 10.f));
+				outputs[OUT_OUTPUT + 1].setVoltage(clamp(-output[0], -10.f, 10.f));
+			}
+			else if (!outputs[OUT_OUTPUT+0].isConnected() && outputs[OUT_OUTPUT+1].isConnected())
+			{
+				diode_clipper[1].setCircuitParams(input_param, offset_param, cutoff);
+				input[1] = inputs[IN_INPUT + 1].getVoltageSum();
+				upsampler[1].process(input[1], upsampled[1]);
+				for (int u = 0; u < UPSAMPLE; ++u)
+					{
+						processed[1][u] = diode_clipper[1].processSample(upsampled[1][u]);
+					}
+
+				output[1] = output_param * decimator[1].process(processed[1]);
+				outputs[OUT_OUTPUT + 0].setVoltage(clamp(-output[1], -10.f, 10.f));
+				outputs[OUT_OUTPUT + 1].setVoltage(clamp(-output[1], -10.f, 10.f));
+			}
+
+				gate_length = 0.1f;
+				float sample_time = args.sampleTime;
+				if (std::max(std::fabs(output[0]),std::fabs(output[1])) >= 10.f)
+				{gateGenerator.trigger(gate_length);}
+				lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(sample_time));
+
+			
+		}	
 	}
 };
 
@@ -119,8 +268,8 @@ struct PROTO6Widget : ModuleWidget {
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(66.04, 12.85)), module, PROTO6::PARAM3_PARAM));
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 12.85)), module, PROTO6::PARAM4_PARAM));
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(118.872, 12.85)), module, PROTO6::PARAM5_PARAM));
-		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(13.208, 38.55)), module, PROTO6::PARAM6_PARAM));
-		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(39.624, 38.55)), module, PROTO6::PARAM7_PARAM));
+		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(13.208, 38.55)), module, PROTO6::PARAM6_PARAM));
+		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(39.624, 38.55)), module, PROTO6::PARAM7_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(66.04, 38.55)), module, PROTO6::PARAM8_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 38.55)), module, PROTO6::PARAM9_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(118.872, 38.55)), module, PROTO6::PARAM10_PARAM));
@@ -130,29 +279,34 @@ struct PROTO6Widget : ModuleWidget {
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 64.25)), module, PROTO6::PARAM14_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(118.872, 64.25)), module, PROTO6::PARAM15_PARAM));
 
-		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 77.1)), module, PROTO6::CV1_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 77.1)), module, PROTO6::CV1_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 77.1)), module, PROTO6::CV2_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 77.1)), module, PROTO6::CV3_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 77.1)), module, PROTO6::CV4_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(118.872, 77.1)), module, PROTO6::CV5_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 86.171)), module, PROTO6::CV6_INPUT));
+		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(13.208, 86.171)), module, PROTO6::LIGHT_LIGHT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 86.171)), module, PROTO6::CV7_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 86.171)), module, PROTO6::CV8_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 86.171)), module, PROTO6::CV9_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(118.872, 86.171)), module, PROTO6::CV10_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 95.242)), module, PROTO6::CV11_INPUT));
+		//addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(13.208, 95.242)), module, PROTO6::RANGE_PARAM, PROTO6::PUSH_LIGHT));
+		addParam(createParamCentered<BefacoSwitchHorizontal>(mm2px(Vec(13.208, 38.55)),  module, PROTO6::RANGE_PARAM));
+
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 95.242)), module, PROTO6::CV12_INPUT));
+		
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 95.242)), module, PROTO6::CV13_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 95.242)), module, PROTO6::CV14_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(118.872, 95.242)), module, PROTO6::CV15_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 107.562)), module, PROTO6::IN1_INPUT));
-		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 107.562)), module, PROTO6::IN2_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 107.562)), module, PROTO6::IN_INPUT+0));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 107.562)), module, PROTO6::IN_INPUT+1));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 107.562)), module, PROTO6::IN3_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 107.562)), module, PROTO6::IN4_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(118.872, 107.562)), module, PROTO6::IN5_INPUT));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(13.208, 118.296)), module, PROTO6::OUT1_OUTPUT));
-		//addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(39.624, 118.296)), module, PROTO6::OUT2_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(13.208, 118.296)), module, PROTO6::OUT_OUTPUT+0));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(39.624, 118.296)), module, PROTO6::OUT_OUTPUT+1));
 		//addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(66.04, 118.296)), module, PROTO6::OUT3_OUTPUT));
 		//addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(92.456, 118.296)), module, PROTO6::OUT4_OUTPUT));
 		//addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(118.872, 118.296)), module, PROTO6::OUT5_OUTPUT));
