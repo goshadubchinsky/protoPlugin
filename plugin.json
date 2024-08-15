@@ -14,16 +14,10 @@
   "changelogUrl": "",
   "modules": [
     {
-      "slug": "PROTO6",
-      "name": "PROTO6",
-      "description": "WDF Diode clipper based on chowdsp wdf examples",
-      "tags": ["clipper"]
-    },
-    {
-      "slug": "PROTO7",
-      "name": "PROTO7",
-      "description": "SVF filter based on Cytomic papers trap2",
-      "tags": ["vcf"]
+      "slug": "M102",
+      "name": "M102",
+      "description": "",
+      "tags": []
     }
   ]
 }

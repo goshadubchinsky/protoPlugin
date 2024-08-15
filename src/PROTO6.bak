@@ -143,8 +143,6 @@ struct PROTO6 : Module {
 	DiodeClipper diode_clipper[channels];
 	
 	//OTHER
-	//int loopCounter = 0;
-
 	float gate_length{0.f};
 	rack::dsp::PulseGenerator gateGenerator;
 
@@ -152,13 +150,13 @@ struct PROTO6 : Module {
 	void onAdd (const AddEvent &e) override
 	{
 		for (int c = 0; c < channels; ++c)
-		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);}
+		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE); diode_clipper[c].reset();}
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override
 	{
 		for (int c = 0; c < channels; ++c)
-		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);}
+		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE); diode_clipper[c].reset();}
 	}
 
 	//void onReset(const ResetEvent &e) override
