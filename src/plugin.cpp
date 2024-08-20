@@ -9,7 +9,7 @@ void init(Plugin* p) {
 
 	// Add modules here
 	// p->addModel(modelMyModule);
-	 //p->addModel(modelPROTO6);
+	 p->addModel(modelPROTO6);
 	 p->addModel(modelM102);
 	 p->addModel(modelPROTO6);
 
