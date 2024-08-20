@@ -12,3 +12,4 @@ secret_config.json
 .DS_Store
 Makefile
 plugin.dll
+*.dll
