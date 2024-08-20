@@ -18,6 +18,12 @@
       "name": "M102",
       "description": "",
       "tags": []
+    },
+    {
+      "slug": "PROTO6",
+      "name": "PROTO6",
+      "description": "",
+      "tags": []
     }
   ]
 }
