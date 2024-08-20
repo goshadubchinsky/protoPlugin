@@ -11,3 +11,4 @@ secret_config.json
 # Ignore all .DS_Store files (common on macOS)
 .DS_Store
 Makefile
+plugin.dll
