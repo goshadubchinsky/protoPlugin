@@ -1,5 +1,6 @@
 #include "plugin.hpp"
-#include "chowdsp/diode_clipper_wdf_class.h"
+#include "chowdsp/diode_clipper_wdf_class.hpp"
+#include "chowdsp/ChowDSP.hpp"
 
 
 struct M102 : Module {
@@ -56,6 +57,10 @@ struct M102 : Module {
 
 		configBypass(IN_INPUT + 0, OUT_OUTPUT + 0);
 		configBypass(IN_INPUT + 1, OUT_OUTPUT + 1);
+
+		oversample.setOversamplingIndex(2); // default 4x oversampling
+
+		onSampleRateChange();
 	}
 
 	// channels
@@ -73,33 +78,48 @@ struct M102 : Module {
 	// PARAMS
 	float offset_param{0.f};
 	float stereo_offset_param[channels] = {0.f};
+	float cutoff = {0.f};
 
 	// OVERSAMPLE
 	static const int UPSAMPLE = 8;
-	static const int QUALITY = 8;
-	dsp::Upsampler<UPSAMPLE, QUALITY> upsampler[channels];
-    dsp::Decimator<UPSAMPLE, QUALITY> decimator[channels];
-	float upsampled[channels][UPSAMPLE];
-	float processed[channels][UPSAMPLE];
+	//static const int QUALITY = 8;
+	//dsp::Upsampler<UPSAMPLE, QUALITY> upsampler[channels];
+    //dsp::Decimator<UPSAMPLE, QUALITY> decimator[channels];
+	//float upsampled[channels][UPSAMPLE];
+	//float processed[channels][UPSAMPLE];
+
+	// CHOWDSP OVERSAMPLING
+	chowdsp::VariableOversampling oversample;
+	int oversamplingIndex = {1};
 
 	//CLASSES
 	DiodeClipper diode_clipper[channels];
 	
 	//OTHER
-	float gate_length{0.f};
+	float gate_length{0.5f};
 	rack::dsp::PulseGenerator gateGenerator;
 
 
 	void onAdd (const AddEvent &e) override
 	{
 		for (int c = 0; c < channels; ++c)
-		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE); diode_clipper[c].reset();}
+		{
+			UPSAMPLE = 2^oversamplingIndex;
+			diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);
+			diode_clipper[c].reset();
+		}
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override
 	{
+		float newSampleRate = getSampleRate();
+		
 		for (int c = 0; c < channels; ++c)
-		{diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE); diode_clipper[c].reset();}
+		{
+			UPSAMPLE = 2^oversamplingIndex;
+			diode_clipper[c].setSampleRate(newSampleRate * oversample.getOversamplingRatio(), UPSAMPLE);
+			diode_clipper[c].reset();
+		}
 	}
 
 	//void onReset(const ResetEvent &e) override
@@ -110,12 +130,11 @@ struct M102 : Module {
 
 	void process(const ProcessArgs& args) override {
 
-		if (inputs[IN_INPUT + 0].isConnected() || inputs[IN_INPUT + 1].isConnected())
+		if ((inputs[IN_INPUT + 0].isConnected() && outputs[OUT_OUTPUT + 0].isConnected()) || (inputs[IN_INPUT + 1].isConnected() && outputs[OUT_OUTPUT + 1].isConnected()))
 		{
 			range_param = params[RANGE_PARAM].getValue();
 			input_param = params[INPUT_PARAM].getValue();
 			input_param *= range_param;
-			
 			
 			if (inputs[CV2_INPUT].isConnected())
 			{
@@ -131,74 +150,39 @@ struct M102 : Module {
 				input_param *= input_cv;
 			}
 
-			
-
 			output_param = params[OUTPUT_PARAM].getValue();
 			offset_param = params[OFFSET_PARAM].getValue();
-			//stereo_offset_param[0] = params[PARAM5_PARAM].getValue();
-			//stereo_offset_param[1] = - params[PARAM5_PARAM].getValue();
 
-			float cutoff = params[CUTOFF_PARAM].getValue();
+			cutoff = params[CUTOFF_PARAM].getValue();
 			cutoff *= 10.f - 5.f;
 			cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff);
-			cutoff = clamp(cutoff, 16.f, args.sampleRate / 2.f );
+			cutoff = clamp(cutoff, 16.f, APP->engine->getSampleRate() / 2.f );
+		}
 
-			
-			if (outputs[OUT_OUTPUT+0].isConnected() && outputs[OUT_OUTPUT+1].isConnected())
+		for (int c = 0; c < channels; ++c)
+		{
+			if (inputs[IN_INPUT + c].isConnected() && outputs[OUT_OUTPUT + c].isConnected())
 			{
-				for (int c = 0; c < channels; ++c)
+				diode_clipper[c].setCircuitParams(input_param, offset_param, cutoff);
+				input[c] = inputs[IN_INPUT + c].getVoltageSum();
+				upsampler[c].process(input[c], upsampled[c]);
+
+				for (int u = 0; u < UPSAMPLE; ++u)
 				{
-					//diode_clipper[c].setCircuitParams(input_param, offset_param + stereo_offset_param[c], cutoff);
-					diode_clipper[c].setCircuitParams(input_param, offset_param, cutoff);
-					input[c] = inputs[IN_INPUT + c].getVoltageSum();
-					upsampler[c].process(input[c], upsampled[c]);
-
-					for (int u = 0; u < UPSAMPLE; ++u)
-					{
-						processed[c][u] = diode_clipper[c].processSample(upsampled[c][u]);
-					}
-
-					output[c] = output_param * decimator[c].process(processed[c]);
-					outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
+					processed[c][u] = diode_clipper[c].processSample(upsampled[c][u]);
 				}
+
+				output[c] = output_param * decimator[c].process(processed[c]);
+				outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
 			}
-			else if (outputs[OUT_OUTPUT+0].isConnected() && !outputs[OUT_OUTPUT+1].isConnected())
-			{
-				diode_clipper[0].setCircuitParams(input_param, offset_param, cutoff);
-				input[0] = inputs[IN_INPUT + 0].getVoltageSum();
-				upsampler[0].process(input[0], upsampled[0]);
-				for (int u = 0; u < UPSAMPLE; ++u)
-					{
-						processed[0][u] = diode_clipper[0].processSample(upsampled[0][u]);
-					}
+		}
 
-				output[0] = output_param * decimator[0].process(processed[0]);
-				outputs[OUT_OUTPUT + 0].setVoltage(clamp(-output[0], -10.f, 10.f));
-				outputs[OUT_OUTPUT + 1].setVoltage(clamp(-output[0], -10.f, 10.f));
-			}
-			else if (!outputs[OUT_OUTPUT+0].isConnected() && outputs[OUT_OUTPUT+1].isConnected())
-			{
-				diode_clipper[1].setCircuitParams(input_param, offset_param, cutoff);
-				input[1] = inputs[IN_INPUT + 1].getVoltageSum();
-				upsampler[1].process(input[1], upsampled[1]);
-				for (int u = 0; u < UPSAMPLE; ++u)
-					{
-						processed[1][u] = diode_clipper[1].processSample(upsampled[1][u]);
-					}
-
-				output[1] = output_param * decimator[1].process(processed[1]);
-				outputs[OUT_OUTPUT + 0].setVoltage(clamp(-output[1], -10.f, 10.f));
-				outputs[OUT_OUTPUT + 1].setVoltage(clamp(-output[1], -10.f, 10.f));
-			}
-
-				gate_length = 0.1f;
-				float sample_time = args.sampleTime;
-				if (std::max(std::fabs(output[0]),std::fabs(output[1])) >= 10.f)
-				{gateGenerator.trigger(gate_length);}
-				lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(sample_time));
-
-			
-		}	
+		gate_length = 0.1f;
+		float sample_time = args.sampleRate;
+		if (std::max(std::fabs(output[0]),std::fabs(output[1])) >= 10.f)
+		{gateGenerator.trigger(gate_length);}
+		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(1.f/sample_time));
+		
 	}
 };
 
@@ -232,6 +216,27 @@ struct M102Widget : ModuleWidget {
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(6.716, 105.6)), module, M102::OUT_OUTPUT+0));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(6.716, 114.255)), module, M102::OUT_OUTPUT+1));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		M102* module = dynamic_cast<M102*>(this->module);
+		assert(module);
+
+		menu->addChild(new MenuSeparator());
+		
+		menu->addChild(createIndexSubmenuItem("Oversampling",
+		{"Off", "x2", "x4", "x8"},
+		[ = ]() {
+		//	return module->oversamplingIndex;
+			return 0;
+		},
+		[ = ](int mode) {
+			module->oversamplingIndex = mode;
+			module->onSampleRateChange();
+			return 0;
+		}
+		                                     ));
+
 	}
 };
 

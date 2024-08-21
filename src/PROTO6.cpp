@@ -2,12 +2,22 @@
 #include <cmath>
 
 float Transistor(float in, float gain) {
-    const float log2e = std::log2(std::exp(1.0f));
-    float x = in * gain;
-    float z = std::exp2(x * log2e);
-    float result = z / (z + 1.0f);
-    return result;
+    // Calculate the exponential terms
+
+	in *= 0.2f;
+    float exp_in_gain = exp(in * gain);
+    float exp_gain = exp(gain);
+    
+    // Compute the components of the S5 formula
+    float term1 = exp_in_gain / (exp_in_gain + 1.0f) - 0.5f;
+    float term2 = 1.0f / (exp_gain / (exp_gain + 1.0f) - 0.5f);
+    
+    // Compute S5
+    float output = 5.f * term1 * term2;
+    
+    return output;
 }
+
 
 
 struct PROTO6 : Module {
@@ -136,8 +146,11 @@ struct PROTO6 : Module {
 
 		output_1 = output_0;
 		input_1 = input_0;
-		input_0_B = inputs[IN2_INPUT].getVoltageSum() * 0.2f;
+
+
+		input_0_B = inputs[IN2_INPUT].getVoltageSum();
 		gain = params[PARAM2_PARAM].getValue();
+		gain = clamp(gain, 0.01f, 10.f);
 		input_0_B = Transistor(input_0_B, gain);
 		float output = input_0_B;
 		outputs[OUT2_OUTPUT].setVoltage(output);
