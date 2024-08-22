@@ -11,6 +11,7 @@ extern Plugin* pluginInstance;
 // extern Model* modelMyModule;
 extern Model* modelM102;
 extern Model* modelPROTO6;
+extern Model* modelCEM3340;
 
 inline float getSampleRate() noexcept {
 // in benchmarking app, sample rate is not defined    

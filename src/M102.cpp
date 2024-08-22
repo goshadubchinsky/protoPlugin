@@ -47,15 +47,15 @@ struct M102 : Module {
 		//const float defaultFreq = (std::log2(defaultFreqHz / dsp::FREQ_C4) + 5) / 10;
 		configParam(CUTOFF_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " Hz", std::pow(2, 10.f), dsp::FREQ_C4 / std::pow(2, 5.f));
 
-		configInput(IN_INPUT+0, "Left Input");
-		configInput(IN_INPUT+1, "Right Input");
+		configInput(IN_INPUT+0, "Left");
+		configInput(IN_INPUT+1, "Right");
 
 		configSwitch(RANGE_PARAM,1.f, 3.f, 1.f, "Gain Control Multiplier", {"x1", "x2", "x3"});
 			paramQuantities[RANGE_PARAM]->snapEnabled = true;
-		configInput(CV1_INPUT, "");
-		configInput(CV2_INPUT, "");
-		configOutput(OUT_OUTPUT+0, "Left Output");
-		configOutput(OUT_OUTPUT+1, "Right Output");
+		configInput(CV1_INPUT, "CV1");
+		configInput(CV2_INPUT, "CV2");
+		configOutput(OUT_OUTPUT+0, "Left");
+		configOutput(OUT_OUTPUT+1, "Right");
 
 		configBypass(IN_INPUT + 0, OUT_OUTPUT + 0);
 		configBypass(IN_INPUT + 1, OUT_OUTPUT + 1);
@@ -117,10 +117,9 @@ struct M102 : Module {
 
 	void process(const ProcessArgs& args) override {
 
-		oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
-
 		if ((inputs[IN_INPUT + 0].isConnected() && outputs[OUT_OUTPUT + 0].isConnected()) || (inputs[IN_INPUT + 1].isConnected() && outputs[OUT_OUTPUT + 1].isConnected()))
 		{
+			oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
 			range_param = params[RANGE_PARAM].getValue();
 			input_param = params[INPUT_PARAM].getValue();
 			input_param *= range_param;

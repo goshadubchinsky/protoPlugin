@@ -24,6 +24,12 @@
       "name": "PROTO6",
       "description": "",
       "tags": []
+    },
+    {
+      "slug": "CEM3340",
+      "name": "CEM3340",
+      "description": "",
+      "tags": []
     }
   ]
 }
