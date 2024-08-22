@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include <cmath>
+#include "chowdsp/shared/VariableOversampling.hpp"
 
 float Transistor(float in, float gain) {
     // Calculate the exponential terms
@@ -119,6 +120,9 @@ struct PROTO6 : Module {
 
 		configBypass(IN1_INPUT, OUT1_OUTPUT);
 		configBypass(IN2_INPUT, OUT2_OUTPUT);
+
+		oversample.setOversamplingIndex(2); // default 4x oversampling
+		onSampleRateChange();
 	}
 
 	float input_0 = {0.f};
@@ -132,12 +136,22 @@ struct PROTO6 : Module {
 	float input_0_B = {0.f};
 	float gain = {1.f};
 
+	void onSampleRateChange() override {
+        float newSampleRate = getSampleRate();
+        oversample.reset(newSampleRate);
+    }
+
+	void onReset() override {
+        Module::onReset();
+        oversample.reset(getSampleRate());
+    }
+
 	void process(const ProcessArgs& args) override {
 		
 		sample_rate = args.sampleRate;
 		cutoff = params[PARAM1_PARAM].getValue();
 		R = 1.f - (M_PI * 2.f * cutoff / sample_rate);
-
+		
 		input_0 = inputs[IN1_INPUT].getVoltageSum();
 		output_0 = input_0 - input_1 + R * output_1;
 
@@ -147,16 +161,27 @@ struct PROTO6 : Module {
 		output_1 = output_0;
 		input_1 = input_0;
 
-
+		
 		input_0_B = inputs[IN2_INPUT].getVoltageSum();
+
+		oversample.upsample(input_0_B);
+		float* osBuffer = oversample.getOSBuffer();
+
+
 		gain = params[PARAM2_PARAM].getValue();
 		gain = clamp(gain, 0.01f, 10.f);
-		input_0_B = Transistor(input_0_B, gain);
-		float output = input_0_B;
+
+		for(int k = 0; k < oversample.getOversamplingRatio(); k++)
+            {osBuffer[k] = (float) Transistor(osBuffer[k], gain);}
+        float output = oversample.downsample();
 		outputs[OUT2_OUTPUT].setVoltage(output);
-		
 
 	}
+
+	VariableOversampling<> oversample;
+
+private:
+
 };
 
 
@@ -213,6 +238,11 @@ struct PROTO6Widget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(92.456, 118.296)), module, PROTO6::OUT4_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(118.872, 118.296)), module, PROTO6::OUT5_OUTPUT));
 	}
+
+	void appendContextMenu(Menu *menu) override {
+        menu->addChild(new MenuSeparator());
+        dynamic_cast<PROTO6*> (module)->oversample.addContextMenu(menu, module);
+    }
 };
 
 

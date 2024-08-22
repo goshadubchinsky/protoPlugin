@@ -13,10 +13,9 @@ public:
 
     DiodeClipper() = default;
 
-    void setSampleRate(float sampleRate, int UPSAMPLE)
+    void setSampleRate(float sampleRate)
     {
-        this->UPSAMPLE = UPSAMPLE;
-        this->sampleRate = sampleRate * this->UPSAMPLE;
+        this->sampleRate = sampleRate;
         C1.prepare(this->sampleRate);
     }
 
@@ -54,15 +53,11 @@ private:
 
     float applyInputGain(float input)
     {
-        if      (this->UPSAMPLE == 8) {input *= this->input_gain * 1.5f * 0.668f;}
-        else if (this->UPSAMPLE == 4) {input *= this->input_gain * 1.5f * 0.733f;}
-        else if (this->UPSAMPLE == 2) {input *= this->input_gain * 1.5f * 0.820f;}
-        else if (this->UPSAMPLE == 1) {input *= this->input_gain * 1.5f * 1.104f;}
-        else                          {input = 0.f;}
+        //input *= this->input_gain * 1.5f * 1.104f;
+        input *= this->input_gain * 1.5f;
         return input;
     }
 
-    int UPSAMPLE{1};
     float sampleRate{44100.f};
     float input_gain{1.f};
     float offset{0.f};

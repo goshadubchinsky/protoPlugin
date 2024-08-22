@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
-#include "chowdsp/ChowDSP.hpp"
-
+#include "chowdsp/shared/VariableOversampling.hpp"
 
 struct M102 : Module {
 	enum ParamId {
@@ -28,6 +27,9 @@ struct M102 : Module {
 		LIGHT_LIGHT,
 		LIGHTS_LEN
 	};
+
+	// channels
+	static const int channels = 2;
 
 	M102() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -58,13 +60,15 @@ struct M102 : Module {
 		configBypass(IN_INPUT + 0, OUT_OUTPUT + 0);
 		configBypass(IN_INPUT + 1, OUT_OUTPUT + 1);
 
-		oversample.setOversamplingIndex(2); // default 4x oversampling
+		for(int c = 0; c < channels; c++)
+		{
+			oversample[c].setOversamplingIndex(2); // default 4x oversampling
+		}
 
 		onSampleRateChange();
+
 	}
 
-	// channels
-	static const int channels = 2;
 	// INPUTS+p
 	float input[channels] = {0.f};
 	float input_param{1.f}; float range_param{1.f};
@@ -78,19 +82,7 @@ struct M102 : Module {
 	// PARAMS
 	float offset_param{0.f};
 	float stereo_offset_param[channels] = {0.f};
-	float cutoff = {0.f};
-
-	// OVERSAMPLE
-	static const int UPSAMPLE = 8;
-	//static const int QUALITY = 8;
-	//dsp::Upsampler<UPSAMPLE, QUALITY> upsampler[channels];
-    //dsp::Decimator<UPSAMPLE, QUALITY> decimator[channels];
-	//float upsampled[channels][UPSAMPLE];
-	//float processed[channels][UPSAMPLE];
-
-	// CHOWDSP OVERSAMPLING
-	chowdsp::VariableOversampling oversample;
-	int oversamplingIndex = {1};
+	float cutoff[channels] = {0.f};
 
 	//CLASSES
 	DiodeClipper diode_clipper[channels];
@@ -99,36 +91,33 @@ struct M102 : Module {
 	float gate_length{0.5f};
 	rack::dsp::PulseGenerator gateGenerator;
 
-
-	void onAdd (const AddEvent &e) override
+	void onSampleRateChange() override
 	{
 		for (int c = 0; c < channels; ++c)
 		{
-			UPSAMPLE = 2^oversamplingIndex;
-			diode_clipper[c].setSampleRate(APP->engine->getSampleRate(), UPSAMPLE);
+			float newSampleRate = getSampleRate();
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
 			diode_clipper[c].reset();
+			oversample[c].reset(newSampleRate);
 		}
+
+		oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
 	}
 
-	void onSampleRateChange(const SampleRateChangeEvent& e) override
-	{
-		float newSampleRate = getSampleRate();
-		
+    void onReset() override {
+        Module::onReset();
 		for (int c = 0; c < channels; ++c)
 		{
-			UPSAMPLE = 2^oversamplingIndex;
-			diode_clipper[c].setSampleRate(newSampleRate * oversample.getOversamplingRatio(), UPSAMPLE);
 			diode_clipper[c].reset();
+			oversample[c].reset(getSampleRate());
 		}
-	}
 
-	//void onReset(const ResetEvent &e) override
-	//{
-	//	for (int c = 0; c < channels; ++c)
-	//	{diode_clipper[c].reset();}
-	//}
+		oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
+    }
 
 	void process(const ProcessArgs& args) override {
+
+		oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
 
 		if ((inputs[IN_INPUT + 0].isConnected() && outputs[OUT_OUTPUT + 0].isConnected()) || (inputs[IN_INPUT + 1].isConnected() && outputs[OUT_OUTPUT + 1].isConnected()))
 		{
@@ -152,29 +141,39 @@ struct M102 : Module {
 
 			output_param = params[OUTPUT_PARAM].getValue();
 			offset_param = params[OFFSET_PARAM].getValue();
-
-			cutoff = params[CUTOFF_PARAM].getValue();
-			cutoff *= 10.f - 5.f;
-			cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff);
-			cutoff = clamp(cutoff, 16.f, APP->engine->getSampleRate() / 2.f );
 		}
 
 		for (int c = 0; c < channels; ++c)
 		{
+			cutoff[c] = params[CUTOFF_PARAM].getValue();
+			cutoff[c] = cutoff[c] * 10.f - 5.f;
+			cutoff[c] = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff[c]);
+			cutoff[c] = clamp(cutoff[c], 1.f, getSampleRate() * oversample[c].getOversamplingRatio() * 0.18f );
+
 			if (inputs[IN_INPUT + c].isConnected() && outputs[OUT_OUTPUT + c].isConnected())
 			{
-				diode_clipper[c].setCircuitParams(input_param, offset_param, cutoff);
+				diode_clipper[c].setCircuitParams(input_param, offset_param, cutoff[c]);
 				input[c] = inputs[IN_INPUT + c].getVoltageSum();
-				upsampler[c].process(input[c], upsampled[c]);
+				//upsampler[c].process(input[c], upsampled[c]);
 
-				for (int u = 0; u < UPSAMPLE; ++u)
+				oversample[c].upsample(input[c]);
+
+				float* osBuffer = oversample[c].getOSBuffer();
+
+				for (int k = 0; k < oversample[c].getOversamplingRatio(); k++)
 				{
-					processed[c][u] = diode_clipper[c].processSample(upsampled[c][u]);
+					osBuffer[k] = diode_clipper[c].processSample(osBuffer[k]);
 				}
 
-				output[c] = output_param * decimator[c].process(processed[c]);
+				output[c] = output_param * oversample[c].downsample();
+
 				outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
 			}
+			else
+			{
+				outputs[OUT_OUTPUT + c].setVoltage(0.f);
+			}
+
 		}
 
 		gate_length = 0.1f;
@@ -184,6 +183,11 @@ struct M102 : Module {
 		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(1.f/sample_time));
 		
 	}
+
+	VariableOversampling<> oversample[channels];
+
+private:
+
 };
 
 
@@ -218,26 +222,13 @@ struct M102Widget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(6.716, 114.255)), module, M102::OUT_OUTPUT+1));
 	}
 
-	void appendContextMenu(Menu* menu) override {
-		M102* module = dynamic_cast<M102*>(this->module);
-		assert(module);
+	void appendContextMenu(Menu *menu) override {
+        menu->addChild(new MenuSeparator());
 
-		menu->addChild(new MenuSeparator());
-		
-		menu->addChild(createIndexSubmenuItem("Oversampling",
-		{"Off", "x2", "x4", "x8"},
-		[ = ]() {
-		//	return module->oversamplingIndex;
-			return 0;
-		},
-		[ = ](int mode) {
-			module->oversamplingIndex = mode;
-			module->onSampleRateChange();
-			return 0;
-		}
-		                                     ));
+		dynamic_cast<M102*> (module)->oversample[0].addContextMenu(menu, module);
+        
+    }
 
-	}
 };
 
 

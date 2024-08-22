@@ -12,7 +12,14 @@ extern Plugin* pluginInstance;
 extern Model* modelM102;
 extern Model* modelPROTO6;
 
-
+inline float getSampleRate() noexcept {
+// in benchmarking app, sample rate is not defined    
+#ifndef CHOWDSP_BENCH
+    return APP->engine->getSampleRate();
+#else
+    return 48000.0f;
+#endif
+}
 
 
 ////
