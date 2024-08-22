@@ -148,7 +148,8 @@ struct M102 : Module {
 			cutoff[c] = params[CUTOFF_PARAM].getValue();
 			cutoff[c] = cutoff[c] * 10.f - 5.f;
 			cutoff[c] = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff[c]);
-			cutoff[c] = clamp(cutoff[c], 1.f, getSampleRate() * oversample[c].getOversamplingRatio() * 0.18f );
+			//cutoff[c] = clamp(cutoff[c], 1.f, (args.sampleRate) * (oversample[c].getOversamplingRatio() * 0.5f));
+			cutoff[c] = clamp(cutoff[c], 1.f, 22000.f);
 
 			if (inputs[IN_INPUT + c].isConnected() && outputs[OUT_OUTPUT + c].isConnected())
 			{
@@ -177,10 +178,9 @@ struct M102 : Module {
 		}
 
 		gate_length = 0.1f;
-		float sample_time = args.sampleRate;
 		if (std::max(std::fabs(output[0]),std::fabs(output[1])) >= 10.f)
 		{gateGenerator.trigger(gate_length);}
-		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(1.f/sample_time));
+		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(args.sampleTime));
 		
 	}
 
