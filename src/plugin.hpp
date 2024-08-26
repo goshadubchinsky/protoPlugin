@@ -12,6 +12,7 @@ extern Plugin* pluginInstance;
 extern Model* modelM102;
 extern Model* modelPROTO6;
 extern Model* modelCEM3340;
+extern Model* modelNeutron;
 
 inline float getSampleRate() noexcept {
 // in benchmarking app, sample rate is not defined    
@@ -25,6 +26,43 @@ inline float getSampleRate() noexcept {
 
 ////
 
+struct ScrewBlue : SvgScrew {
+	ScrewBlue() {
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/ScrewBlue.svg")));
+	}
+};
+
+struct Neutron_Knob_Large : RoundKnob {
+    Neutron_Knob_Large() {
+        //minAngle = -0.75*M_PI;
+		//maxAngle = 0.75*M_PI;
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/Neutron/Neutron_Knob_Large.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/Neutron/Neutron_Knob_Large_bg.svg")));
+        /// shadow->opacity = 0;
+    }
+};
+
+struct Neutron_Knob_Medium : RoundKnob {
+    Neutron_Knob_Medium() {
+        //minAngle = -0.75*M_PI;
+		//maxAngle = 0.75*M_PI;
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/Neutron/Neutron_Knob_Medium.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/Neutron/Neutron_Knob_Medium_bg.svg")));
+        /// shadow->opacity = 0;
+    }
+};
+
+struct Neutron_Knob_Small : RoundKnob {
+    Neutron_Knob_Small() {
+        //minAngle = -0.75*M_PI;
+		//maxAngle = 0.75*M_PI;
+        setSvg(Svg::load(asset::plugin(pluginInstance, "res/Neutron/Neutron_Knob_Small.svg")));
+        bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/Neutron/Neutron_Knob_Small_bg.svg")));
+        /// shadow->opacity = 0;
+    }
+};
+
+
 struct WhiteKnobL : RoundKnob {
     WhiteKnobL() {
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/WhiteKnobL.svg")));
@@ -35,8 +73,8 @@ struct WhiteKnobL : RoundKnob {
 
 struct WhiteKnob10 : RoundKnob {
     WhiteKnob10() {
-        minAngle = -0.75*M_PI;
-		maxAngle = 0.75*M_PI;
+        //minAngle = -0.75*M_PI;
+		//maxAngle = 0.75*M_PI;
         setSvg(Svg::load(asset::plugin(pluginInstance, "res/WhiteKnob10.svg")));
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/WhiteKnob10_bg.svg")));
         /// shadow->opacity = 0;
