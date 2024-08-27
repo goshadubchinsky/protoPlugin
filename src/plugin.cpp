@@ -12,6 +12,7 @@ void init(Plugin* p) {
 	 p->addModel(modelM102);
 	 p->addModel(modelPROTO6);
 	 p->addModel(modelCEM3340);
+	 p->addModel(modelNeutron);
 	 
 
 	// Any other plugin initialization may go here.
