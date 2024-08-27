@@ -79,7 +79,7 @@ struct PROTO6 : Module {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configParam(PARAM1_PARAM, 1.f, 1000.f, 1.f, "HPF");
 		configParam(PARAM2_PARAM, 0.f, 10.f, 1.f, "GAIN");
-		configParam(PARAM3_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(PARAM3_PARAM, 0.f, 1.f, 0.1f, "GAIN TANH");
 		configParam(PARAM4_PARAM, 0.f, 1.f, 0.f, "");
 		configParam(PARAM5_PARAM, 0.f, 1.f, 0.f, "");
 		configParam(PARAM6_PARAM, 0.f, 1.f, 0.f, "");
@@ -148,34 +148,46 @@ struct PROTO6 : Module {
 
 	void process(const ProcessArgs& args) override {
 		
-		sample_rate = args.sampleRate;
-		cutoff = params[PARAM1_PARAM].getValue();
-		R = 1.f - (M_PI * 2.f * cutoff / sample_rate);
+		if (inputs[IN1_INPUT].isConnected() && outputs[OUT1_OUTPUT].isConnected())
+		{
+			sample_rate = args.sampleRate;
+			cutoff = params[PARAM1_PARAM].getValue();
+			R = 1.f - (M_PI * 2.f * cutoff / sample_rate);
+
+			input_0 = inputs[IN1_INPUT].getVoltageSum();
+			output_0 = input_0 - input_1 + R * output_1;
+
+
+			outputs[OUT1_OUTPUT].setVoltage(output_0);
+
+			output_1 = output_0;
+			input_1 = input_0;
+		}
+		else
+		{
+			outputs[OUT1_OUTPUT].setVoltage(0.f);
+		}
 		
-		input_0 = inputs[IN1_INPUT].getVoltageSum();
-		output_0 = input_0 - input_1 + R * output_1;
+		if (inputs[IN2_INPUT].isConnected() && outputs[OUT2_OUTPUT].isConnected())
+		{
+			input_0_B = inputs[IN2_INPUT].getVoltageSum();
 
-		
-		outputs[OUT1_OUTPUT].setVoltage(output_0);
-
-		output_1 = output_0;
-		input_1 = input_0;
-
-		
-		input_0_B = inputs[IN2_INPUT].getVoltageSum();
-
-		oversample.upsample(input_0_B);
-		float* osBuffer = oversample.getOSBuffer();
+			oversample.upsample(input_0_B);
+			float* osBuffer = oversample.getOSBuffer();
 
 
-		gain = params[PARAM2_PARAM].getValue();
-		gain = clamp(gain, 0.01f, 10.f);
+			gain = params[PARAM2_PARAM].getValue();
+			gain = clamp(gain, 0.01f, 10.f);
 
-		for(int k = 0; k < oversample.getOversamplingRatio(); k++)
-            {osBuffer[k] = (float) Transistor(osBuffer[k], gain);}
-        float output = oversample.downsample();
-		outputs[OUT2_OUTPUT].setVoltage(output);
-
+			for(int k = 0; k < oversample.getOversamplingRatio(); k++)
+        	    {osBuffer[k] = (float) Transistor(osBuffer[k], gain);}
+        	float output = oversample.downsample();
+			outputs[OUT2_OUTPUT].setVoltage(output);
+		}
+		else
+		{
+			outputs[OUT2_OUTPUT].setVoltage(0.f);
+		}
 	}
 
 	VariableOversampling<> oversample;
