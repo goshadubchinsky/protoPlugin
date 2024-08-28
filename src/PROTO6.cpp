@@ -19,6 +19,14 @@ float Transistor(float in, float gain) {
     return output;
 }
 
+template <typename T>
+static T tanh_Pade(T x) {
+	// return std::tanh(x);
+	// Pade approximant of tanh
+	x = simd::clamp(x, -3.f, 3.f);
+	return x * (27 + x * x) / (27 + 9 * x * x);
+}
+
 
 
 struct PROTO6 : Module {
@@ -79,7 +87,7 @@ struct PROTO6 : Module {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configParam(PARAM1_PARAM, 1.f, 1000.f, 1.f, "HPF");
 		configParam(PARAM2_PARAM, 0.f, 10.f, 1.f, "GAIN");
-		configParam(PARAM3_PARAM, 0.f, 1.f, 0.1f, "GAIN TANH");
+		configParam(PARAM3_PARAM, 0.f, 10.f, 1.f, "GAIN TANH");
 		configParam(PARAM4_PARAM, 0.f, 1.f, 0.f, "");
 		configParam(PARAM5_PARAM, 0.f, 1.f, 0.f, "");
 		configParam(PARAM6_PARAM, 0.f, 1.f, 0.f, "");
@@ -127,6 +135,7 @@ struct PROTO6 : Module {
 
 	float input_0 = {0.f};
 	float input_1 = {0.f};
+	float input_2 = {0.f};
 	float output_0 = {0.f};
 	float output_1 = {0.f};
 	float R = {0.f};
@@ -187,6 +196,23 @@ struct PROTO6 : Module {
 		else
 		{
 			outputs[OUT2_OUTPUT].setVoltage(0.f);
+		}
+
+		if (inputs[IN3_INPUT].isConnected())
+		{
+			input_2 = inputs[IN3_INPUT].getVoltageSum() * 0.2f;
+
+			oversample.upsample(input_2);
+			float* osBuffer = oversample.getOSBuffer();
+
+
+			gain = params[PARAM3_PARAM].getValue();
+			gain = clamp(gain, 0.01f, 10.f);
+
+			for(int k = 0; k < oversample.getOversamplingRatio(); k++)
+        	    {osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain);}
+        	float output = oversample.downsample();
+			outputs[OUT3_OUTPUT].setVoltage(output*5.f);
 		}
 	}
 
