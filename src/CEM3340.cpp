@@ -1,9 +1,17 @@
 #include "plugin.hpp"
 #include "Neutron/vco/LabSeven_3340_VCO.h"
 #include <time.h>
-
+#include "chowdsp/shared/VariableOversampling.hpp"
 #include <fstream>
 using namespace std;
+
+template <typename T>
+static T tanh_Pade(T x) {
+	// return std::tanh(x);
+	// Pade approximant of tanh
+	x = simd::clamp(x, -3.f, 3.f);
+	return x * (27 + x * x) / (27 + 9 * x * x);
+}
 
 struct CEM3340 : Module {
 	enum ParamId {
@@ -17,7 +25,7 @@ struct CEM3340 : Module {
 		PARAM_VOLSUBOSC,
 		PARAM_SUBOSCRATIO,
 		PARAM_VOLNOISE,
-		//PARAM11_PARAM,
+		PARAM_VOLSINE,
 		//PARAM12_PARAM,
 		//PARAM13_PARAM,
 		//PARAM14_PARAM,
@@ -47,6 +55,7 @@ struct CEM3340 : Module {
 		INPUTS_LEN
 	};
 	enum OutputId {
+		OUT_SIN,
 		OUT_NOISE,
 		OUT_SQUARE,
 		OUT_SAW,
@@ -76,7 +85,7 @@ struct CEM3340 : Module {
 		configParam(PARAM_VOLSUBOSC, 0.f, 1.f, 0.f, "VOLSUBOSC");
 		configParam(PARAM_SUBOSCRATIO, 0.f, 2.f, 2.f, "SUBOSCRATIO");
 		configParam(PARAM_VOLNOISE, 0.f, 1.f, 0.f, "VOLNOISE");
-		//configParam(PARAM11_PARAM, 0.f, 1.f, 0.f, "");
+		configParam(PARAM_VOLSINE, 0.f, 1.f, 0.f, "VOLSINE");
 		//configParam(PARAM12_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM13_PARAM, 0.f, 1.f, 0.f, "");
 		//configParam(PARAM14_PARAM, 0.f, 1.f, 0.f, "");
@@ -99,18 +108,38 @@ struct CEM3340 : Module {
 		//configInput(IN1_INPUT, "");
 		//configInput(IN2_INPUT, "");
 		//configInput(IN3_INPUT, "");
-		//configInput(IN4_INPUT, "");
+		configOutput(OUT_SIN, "SIN");
 		configOutput(OUT_NOISE, "NOISE");
 		configOutput(OUT_SQUARE, "SQUARE");
 		configOutput(OUT_SAW, "SAW");
 		configOutput(OUT_SUB, "SUB");
 		configOutput(OUT_TRIANGLE, "TRIANGLE");
 		configOutput(OUT_MIX, "MIX");
+
+		oversample.setOversamplingIndex(2); // default 4x oversampling
+		onSampleRateChange();
 	}
 
 	float sampleTimeCurrent = 0.0;
     float sampleRateCurrent = 0.0;
     double pitch,maxPitch,rangeFactor;
+	float square;
+	float saw;
+	float triangle;
+	float sine;
+	float subosc;
+	float noise;
+	float mix;
+
+	void onSampleRateChange() override {
+        float newSampleRate = getSampleRate();
+        oversample.reset(newSampleRate);
+    }
+
+	void onReset() override {
+        Module::onReset();
+        oversample.reset(getSampleRate());
+    }
 
 	void process(const ProcessArgs& args) override {
 
@@ -214,19 +243,45 @@ struct CEM3340 : Module {
 	        vco.getNextBlock(&nextFrame,1);
 	    }
 
+
+		square		= scaling * nextFrame.square;
+		saw			= scaling * nextFrame.sawtooth;
+		triangle	= scaling * nextFrame.triangle;
+
+		sine = 0.2 * triangle;
+		oversample.upsample(sine);
+		float* osBuffer = oversample.getOSBuffer();
+		float gain = 2.f;
+		gain = clamp(gain, 0.01f, 10.f);
+
+		for(int k = 0; k < oversample.getOversamplingRatio(); k++)
+            {osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain);}
+        sine = 5.f * oversample.downsample();
+
+		subosc		= scaling * nextFrame.subosc;
+		noise		= scaling * 6.0 * nextFrame.noise;
+		mix			= 0.4 * (	(square * params[PARAM_VOLSQUARE].getValue()) +
+								(saw * params[PARAM_VOLSAW].getValue()) +
+								(triangle * params[PARAM_VOLTRIANGLE].getValue()) +
+								(subosc * params[PARAM_VOLSUBOSC].getValue()) +
+								(sine * params[PARAM_VOLSINE].getValue()) +
+								(noise * params[PARAM_VOLNOISE].getValue())
+							);
 		//TODO: Activate/deactivate interpolation if outs are not active
-    	outputs[OUT_SQUARE].setVoltage(scaling   * nextFrame.square);
-    	outputs[OUT_SAW].setVoltage(scaling      * nextFrame.sawtooth);
-    	outputs[OUT_SUB].setVoltage(scaling      * nextFrame.subosc);
-    	outputs[OUT_TRIANGLE].setVoltage(scaling * nextFrame.triangle);
-    	outputs[OUT_NOISE].setVoltage(6.0* nextFrame.noise);
-    	outputs[OUT_MIX].setVoltage(0.4*(outputs[OUT_SQUARE].getVoltage()   * params[PARAM_VOLSQUARE].getValue() +
-    	                                 outputs[OUT_SAW].getVoltage()      * params[PARAM_VOLSAW].getValue() +
-    	                                 outputs[OUT_SUB].getVoltage()      * params[PARAM_VOLSUBOSC].getValue() +
-    	                                 outputs[OUT_TRIANGLE].getVoltage() * params[PARAM_VOLTRIANGLE].getValue() +
-    	                                 outputs[OUT_NOISE].getVoltage()    * params[PARAM_VOLNOISE].getValue()));
+    	outputs[OUT_SQUARE].setVoltage(square);
+    	outputs[OUT_SAW].setVoltage(saw);
+    	outputs[OUT_SUB].setVoltage(subosc);
+    	outputs[OUT_TRIANGLE].setVoltage(triangle);
+    	outputs[OUT_SIN].setVoltage(sine);
+    	outputs[OUT_NOISE].setVoltage(noise);
+    	outputs[OUT_MIX].setVoltage(mix);
 
 	}
+
+	VariableOversampling<> oversample;
+
+private:
+
 };
 
 
@@ -250,7 +305,7 @@ struct CEM3340Widget : ModuleWidget {
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(66.04, 38.55)), module, CEM3340::PARAM_VOLTRIANGLE));
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 38.55)), module, CEM3340::PARAM_SUBOSCRATIO));
 		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(118.872, 38.55)), module, CEM3340::PARAM_VOLNOISE));
-		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(13.208, 64.25)), module, CEM3340::PARAM11_PARAM));
+		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(13.208, 64.25)), module, CEM3340::PARAM_VOLSINE));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(39.624, 64.25)), module, CEM3340::PARAM12_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(66.04, 64.25)), module, CEM3340::PARAM13_PARAM));
 		//addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(92.456, 64.25)), module, CEM3340::PARAM14_PARAM));
@@ -274,7 +329,7 @@ struct CEM3340Widget : ModuleWidget {
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 107.562)), module, CEM3340::IN1_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(39.624, 107.562)), module, CEM3340::IN2_INPUT));
 		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(66.04, 107.562)), module, CEM3340::IN3_INPUT));
-		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(92.456, 107.562)), module, CEM3340::IN4_INPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(92.456, 107.562)), module, CEM3340::OUT_SIN));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(118.872, 107.562)), module, CEM3340::OUT_NOISE));
 
@@ -284,6 +339,12 @@ struct CEM3340Widget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(92.456, 118.296)), module, CEM3340::OUT_TRIANGLE));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(118.872, 118.296)), module, CEM3340::OUT_MIX));
 	}
+
+	void appendContextMenu(Menu *menu) override {
+        menu->addChild(new MenuSeparator());
+        dynamic_cast<CEM3340*> (module)->oversample.addContextMenu(menu, module);
+    }
+
 };
 
 
