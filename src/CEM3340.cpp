@@ -79,11 +79,13 @@ struct CEM3340 : Module {
 			paramQuantities[PARAM_RANGE]->snapEnabled = true;
 		configParam(PARAM_PULSEWIDTH, 0.f, 0.5f, 0.f, "PULSEWIDTH");
 		configParam(PARAM_PWMSOURCE, 0.f, 2.f, 1.f, "PWMSOURCE");
+			paramQuantities[PARAM_PWMSOURCE]->snapEnabled = true;
 		configParam(PARAM_VOLSQUARE, 0.f, 1.f, 0.f, "VOLSQUARE");
 		configParam(PARAM_VOLSAW, 0.f, 1.f, 0.f, "VOLSAW");
 		configParam(PARAM_VOLTRIANGLE, 0.f, 1.f, 0.f, "VOLTRIANGLE");
 		configParam(PARAM_VOLSUBOSC, 0.f, 1.f, 0.f, "VOLSUBOSC");
 		configParam(PARAM_SUBOSCRATIO, 0.f, 2.f, 2.f, "SUBOSCRATIO");
+			paramQuantities[PARAM_SUBOSCRATIO]->snapEnabled = true;
 		configParam(PARAM_VOLNOISE, 0.f, 1.f, 0.f, "VOLNOISE");
 		configParam(PARAM_VOLSINE, 0.f, 1.f, 0.f, "VOLSINE");
 		//configParam(PARAM12_PARAM, 0.f, 1.f, 0.f, "");
@@ -116,13 +118,13 @@ struct CEM3340 : Module {
 		configOutput(OUT_TRIANGLE, "TRIANGLE");
 		configOutput(OUT_MIX, "MIX");
 
-		oversample.setOversamplingIndex(2); // default 4x oversampling
+		oversample.setOversamplingIndex(0); // default 4x oversampling
 		onSampleRateChange();
 	}
 
 	float sampleTimeCurrent = 0.0;
     float sampleRateCurrent = 0.0;
-    double pitch,maxPitch,rangeFactor;
+    float pitch,maxPitch,rangeFactor;
 	float square;
 	float saw;
 	float triangle;
@@ -192,7 +194,7 @@ struct CEM3340 : Module {
     	pitch = clamp(pitch, 0.01f, maxPitch);
     	//simulate the jitter observed in the hardware synth
     	//use values > 0.02 for dirtier sound
-    	pitch *= 1.0+0.02*((double) rand() / (RAND_MAX)-0.5);
+    	pitch *= 1.0+0.02*((float) rand() / (RAND_MAX)-0.5);
     	vco.setFrequency(pitch);
 
 		//update suboscillator
@@ -215,7 +217,7 @@ struct CEM3340 : Module {
 		}
 
 		//get next frame and put it out
-	    double scaling = 8.0;
+	    float scaling = 8.0;
 
 	    //TODO: PROPER (FREQUENCY DEPENDENT) AMPLITUDE SCALING FOR SAW AND TRIANGLE
 	    //TODO: PWM FOR TRIANGLE
@@ -243,38 +245,62 @@ struct CEM3340 : Module {
 	        vco.getNextBlock(&nextFrame,1);
 	    }
 
+		if (outputs[OUT_SQUARE].isConnected() || (outputs[OUT_MIX].isConnected() && params[PARAM_VOLSQUARE].getValue() > 0.f))
+		{
+			square		= scaling * nextFrame.square;
+			outputs[OUT_SQUARE].setVoltage(square);
+		}
+		
+		if (outputs[OUT_SAW].isConnected() || (outputs[OUT_MIX].isConnected() && params[PARAM_VOLSAW].getValue() > 0.f))
+		{
+			saw			= scaling * nextFrame.sawtooth;
+			outputs[OUT_SAW].setVoltage(saw);
+		}
 
-		square		= scaling * nextFrame.square;
-		saw			= scaling * nextFrame.sawtooth;
-		triangle	= scaling * nextFrame.triangle;
+		if ((outputs[OUT_TRIANGLE].isConnected() || outputs[OUT_SIN].isConnected()) || (outputs[OUT_MIX].isConnected() && (params[PARAM_VOLTRIANGLE].getValue() > 0.f || params[PARAM_VOLSINE].getValue() > 0.f)))
+		{
+			triangle	= scaling * nextFrame.triangle;
+			outputs[OUT_TRIANGLE].setVoltage(triangle);
 
-		sine = 0.2 * triangle;
-		oversample.upsample(sine);
-		float* osBuffer = oversample.getOSBuffer();
-		float gain = 2.f;
-		gain = clamp(gain, 0.01f, 10.f);
+			if (outputs[OUT_SIN].isConnected() || (outputs[OUT_MIX].isConnected() && params[PARAM_VOLSINE].getValue() > 0.f))
+			{
+				sine = 0.2 * triangle;
+				oversample.upsample(sine);
+				float* osBuffer = oversample.getOSBuffer();
+				float gain = 2.f;
+				gain = clamp(gain, 0.01f, 10.f);
+				for(int k = 0; k < oversample.getOversamplingRatio(); k++)
+            	{
+					osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain); //{osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain);}
+				}
+				sine = 5.f * oversample.downsample();
+				outputs[OUT_SIN].setVoltage(sine);
+			}
+			
+		}
+		
+		if (outputs[OUT_SUB].isConnected() || (outputs[OUT_MIX].isConnected() && params[PARAM_VOLSUBOSC].getValue() > 0.f))
+		{
+			subosc		= scaling * nextFrame.subosc;
+			outputs[OUT_SUB].setVoltage(subosc);
+		}
 
-		for(int k = 0; k < oversample.getOversamplingRatio(); k++)
-            {osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain);}
-        sine = 5.f * oversample.downsample();
+		if (outputs[OUT_NOISE].isConnected() || (outputs[OUT_MIX].isConnected() && params[PARAM_VOLNOISE].getValue() > 0.f))
+		{
+			noise		= scaling * 6.0 * nextFrame.noise;
+			outputs[OUT_NOISE].setVoltage(noise);
+		}
 
-		subosc		= scaling * nextFrame.subosc;
-		noise		= scaling * 6.0 * nextFrame.noise;
-		mix			= 0.4 * (	(square * params[PARAM_VOLSQUARE].getValue()) +
-								(saw * params[PARAM_VOLSAW].getValue()) +
-								(triangle * params[PARAM_VOLTRIANGLE].getValue()) +
-								(subosc * params[PARAM_VOLSUBOSC].getValue()) +
-								(sine * params[PARAM_VOLSINE].getValue()) +
-								(noise * params[PARAM_VOLNOISE].getValue())
-							);
-		//TODO: Activate/deactivate interpolation if outs are not active
-    	outputs[OUT_SQUARE].setVoltage(square);
-    	outputs[OUT_SAW].setVoltage(saw);
-    	outputs[OUT_SUB].setVoltage(subosc);
-    	outputs[OUT_TRIANGLE].setVoltage(triangle);
-    	outputs[OUT_SIN].setVoltage(sine);
-    	outputs[OUT_NOISE].setVoltage(noise);
-    	outputs[OUT_MIX].setVoltage(mix);
+		if (outputs[OUT_MIX].isConnected())
+		{
+			mix			= 0.4 * (	(square * params[PARAM_VOLSQUARE].getValue()) +
+									(saw * params[PARAM_VOLSAW].getValue()) +
+									(triangle * params[PARAM_VOLTRIANGLE].getValue()) +
+									(subosc * params[PARAM_VOLSUBOSC].getValue()) +
+									(sine * params[PARAM_VOLSINE].getValue()) +
+									(noise * params[PARAM_VOLNOISE].getValue())
+								);outputs[OUT_MIX].setVoltage(mix);
+		}
 
 	}
 

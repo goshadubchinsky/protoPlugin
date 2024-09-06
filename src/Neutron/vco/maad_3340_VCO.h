@@ -1,0 +1,2 @@
+#ifndef MAAD_3340_VCO_H
+#define MAAD_3340_VCO_H

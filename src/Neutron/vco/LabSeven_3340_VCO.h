@@ -12,9 +12,9 @@ namespace LabSeven
     namespace LS3340
     {
         //Blackman Harris function
-        inline double wfBlackmanHarris64bit(double nbr_points, double t, double *parameters = NULL)
+        inline float wfBlackmanHarris64bit(float nbr_points, float t, float *parameters = NULL)
         {
-            double _2_pi_by_N_1_times_t = (2.0 * M_PI / (nbr_points - 1))*t;
+            float _2_pi_by_N_1_times_t = (2.0 * M_PI / (nbr_points - 1))*t;
             return 0.35875
                  - 0.48829 * cos(1.0 * _2_pi_by_N_1_times_t)
                  + 0.14128 * cos(2.0 * _2_pi_by_N_1_times_t)
@@ -22,7 +22,7 @@ namespace LabSeven
         }
 
         //SINC function
-        inline double sinc(double t)
+        inline float sinc(float t)
         {
             if(t == 0.0)
             {
@@ -30,21 +30,21 @@ namespace LabSeven
             }
             else
             {
-                double M_PI_t;
+                float M_PI_t;
                 M_PI_t = M_PI * t;
                 return sin(M_PI_t) / M_PI_t;
             }
         }
 
-        double *makeOversampledUnintegrated3340ImpulseDbl(int widthSamples = 8, int ovrsampling = 10000)
+        float *makeOversampledUnintegrated3340ImpulseDbl(int widthSamples = 8, int ovrsampling = 10000)
         {
             //SH pulse specifications:
             //@192kHz: width 8 samples, integrator leakage 1.0-0.27
             //norm 0.27 (coincidence?)
             int nbrSamples = widthSamples*ovrsampling;
-            double *pulse = new double[nbrSamples];
-            double sum;
-            double norm = 0.27; //magic number!
+            float *pulse = new float[nbrSamples];
+            float sum;
+            float norm = 0.27; //magic number!
 
             sum = 0.0;
             for (int i = 0; i < nbrSamples; i++)
@@ -54,7 +54,7 @@ namespace LabSeven
             }
             for (int i = 0; i < nbrSamples; i++)
             {
-                pulse[i] *= norm * (double)ovrsampling / sum;
+                pulse[i] *= norm * (float)ovrsampling / sum;
             }
 
             return pulse;
@@ -64,31 +64,31 @@ namespace LabSeven
 
         struct TLS3340VCOFrame
         {
-            double square;
-            double sawtooth;
-            double subosc;
-            double noise;
-            double triangle;
+            float square;
+            float sawtooth;
+            float subosc;
+            float noise;
+            float triangle;
         };
 
         struct TLS3340ImpulseParameters
         {
             size_t position;
-            double offset;
-            double phaseStep;
-            double scaling;
+            float offset;
+            float phaseStep;
+            float scaling;
         };
 
         struct TLS3340VCOImpulseLUT
         {
             //use high oversampling factor + next neighbour interpolation for performance
             size_t impulseLengthFrames;
-            double oversamplingFactor;
+            float oversamplingFactor;
             size_t lutSize;
-            double *lut;
+            float *lut;
 
             //auxiliary
-            double posOversampled;
+            float posOversampled;
 
             TLS3340VCOImpulseLUT()
             {
@@ -103,7 +103,7 @@ namespace LabSeven
             {
                 delete lut;
             }
-            inline double getValAt(double position)//position without oversampling
+            inline float getValAt(float position)//position without oversampling
             {
                 //position with oversampling
                 posOversampled = position*oversamplingFactor;
@@ -128,10 +128,10 @@ namespace LabSeven
             int trainIndex;
             int nbrActiveImpulses;
             int currentIndex;
-            double impulseCounter;
+            float impulseCounter;
 
             //needed for the leaky integrator that turns the lut impulse into the 340 impulse
-            double integrationBuffer;
+            float integrationBuffer;
 
             TLS3340VCOImpulseTrain()
             {
@@ -141,7 +141,7 @@ namespace LabSeven
                 integrationBuffer = 0.0;
             }
 
-            inline void addImpulse(double offset, double phaseStep, double scaling = 1.0)
+            inline void addImpulse(float offset, float phaseStep, float scaling = 1.0)
             {
                 //increment/wrap trainIndex
                 trainIndex++;
@@ -160,7 +160,7 @@ namespace LabSeven
             }
 
             inline void getNextSumOfImpulsesAndSawtoothSlope(TLS3340VCOImpulseLUT *lut,
-                                                             double &currentSumOfImpulses)//,double &currentSumOfSlopes)
+                                                             float &currentSumOfImpulses)//,float &currentSumOfSlopes)
             {
                 impulseCounter       = 0.0;
                 currentSumOfImpulses = 0.0;
@@ -220,7 +220,7 @@ namespace LabSeven
 
                     //randomize start position
                     //makes phasing unlikely in case multiple 3340s are used together
-                    currentPosition = (unsigned long)round(((double) rand() / (RAND_MAX))*(double)(dataLengthSamples-1));
+                    currentPosition = (unsigned long)round(((float) rand() / (RAND_MAX))*(float)(dataLengthSamples-1));
                 }
                 inline float getNextNoiseSample()
                 {
@@ -246,12 +246,12 @@ namespace LabSeven
                 int sincTableSize;
                 float *sincTable;
 
-                double overSampling;
-                double zeroCrossings;
-                double posOversampled;
-                double middle;
+                float overSampling;
+                float zeroCrossings;
+                float posOversampled;
+                float middle;
             public:
-                inline float getValAt(double posRelMiddleNotOversampled)
+                inline float getValAt(float posRelMiddleNotOversampled)
                 {
                     posOversampled = posRelMiddleNotOversampled * overSampling;
                     int pos = (size_t)round(middle+posOversampled);
@@ -272,19 +272,19 @@ namespace LabSeven
 
                     // BEGIN calculate sinc lut
                     // Based on code by Daniel Werner https://www.experimentalscene.com/articles/minbleps.php
-                    double a = (double)-zeroCrossings;
-                    double b = (double)zeroCrossings;
-                    double r;
+                    float a = (float)-zeroCrossings;
+                    float b = (float)zeroCrossings;
+                    float r;
                     for(int i = 0; i < sincTableSize; i++)
                     {
-                        r = ((double)i) / ((double)(sincTableSize - 1));
+                        r = ((float)i) / ((float)(sincTableSize - 1));
                         sincTable[i] = (float)sinc(a + (r * (b - a)));
                         sincTable[i] *= (float)sinc(-1.0 + (r * (2.0))); //Window function is sinc, too!
                     }
                     // END calculate sinc lut
 
                     //normalize sinc lut
-                    double sum = 0.0;
+                    float sum = 0.0;
                     for(int i = 0; i < sincTableSize; i++)
                     {
                         sum += sincTable[i];
@@ -315,24 +315,24 @@ namespace LabSeven
 
             TLS3340NoiseSource noise;
 
-            double vcoFrequencyHz;
-            double sampleRateHzInternal;
-            double sampleRateHzExternal;
-            double sampleTimeS; //time per sample, 1/f
-            double currentPhaseStep;
-            double phase;
+            float vcoFrequencyHz;
+            float sampleRateHzInternal;
+            float sampleRateHzExternal;
+            float sampleTimeS; //time per sample, 1/f
+            float currentPhaseStep;
+            float phase;
 
-            double currentSumOfZeroPhaseImpulses, currentSumOfPWMImpulses,currentSumOfSawImpulses,currentSumOfSuboscImpulses;
-            double sawtoothSlope;
-            double leakyIntegratorFactor,leakyIntegratorFactorSaw;
+            float currentSumOfZeroPhaseImpulses, currentSumOfPWMImpulses,currentSumOfSawImpulses,currentSumOfSuboscImpulses;
+            float sawtoothSlope;
+            float leakyIntegratorFactor,leakyIntegratorFactorSaw;
 
             int suboscillatorCounter;
             bool squareSwitch,sawSwitch;
-            double pwmCoefficient; //range: -0.5 to +0.5
+            float pwmCoefficient; //range: -0.5 to +0.5
             int suboscillatorMode;
             int noiseIndex;
 
-            double lastPitch = 261.6256;
+            float lastPitch = 261.6256;
 
             //for sinc interpolation (todo: Move iterpolation to struct or class)
                 const int sincZeroCrossings = 3; //increase for even better anti aliasing
@@ -347,19 +347,19 @@ namespace LabSeven
 
                 //depend on external samplerate
                 int    radius;
-                double sampleStep;
-                double stretch;
+                float sampleStep;
+                float stretch;
                 int nbrSamplesRequired;
 
                 //runtime stuff
                 int internalSamplesPointer;
-                double sincPosition;
-                double samplePhase = 0.0;
-                double currentSincCoeff;
-                double triangleTemp = 0.0;
+                float sincPosition;
+                float samplePhase = 0.0;
+                float currentSincCoeff;
+                float triangleTemp = 0.0;
 
 
-            inline void setSamplerateInternal(double sampleRateHz)
+            inline void setSamplerateInternal(float sampleRateHz)
             {
                 sampleRateHzInternal = sampleRateHz;
                 this->sampleTimeS = 1.0/sampleRateHzInternal;
@@ -368,7 +368,7 @@ namespace LabSeven
             }
 
         public:
-            inline void setSamplerateExternal(double sampleRateHz)
+            inline void setSamplerateExternal(float sampleRateHz)
             {
                 sampleRateHzExternal = sampleRateHz;
 
@@ -389,19 +389,19 @@ namespace LabSeven
                     stretch    = 0.5*sampleRateHzExternal/sampleRateHzInternal;
                 }
 
-                radius     = floor((double)sincZeroCrossings/stretch);
+                radius     = floor((float)sincZeroCrossings/stretch);
                 nbrSamplesRequired = radius+1;
                 nbrInternalSamplesInUse = 2*radius+1;
             }
 
-            inline void setFrequency(double frequencyHz)
+            inline void setFrequency(float frequencyHz)
             {
                 this->vcoFrequencyHz = frequencyHz;
                 currentPhaseStep = vcoFrequencyHz * sampleTimeS;
                 sawtoothSlope = currentPhaseStep;//vcoFrequencyHz * sampleTimeS;
             }
 
-            inline void setPwmCoefficient(double pwmCoefficient)
+            inline void setPwmCoefficient(float pwmCoefficient)
             {
                 if (pwmCoefficient > 0.4)
                     this->pwmCoefficient =  0.4;
@@ -538,7 +538,7 @@ namespace LabSeven
                 f->subosc   = 0.0;
                 f->noise    = 0.0;
                 f->triangle = 0.0;
-                sincPosition = ((double)(nbrInternalSamplesInUse-(radius+1))-samplePhase)*stretch;
+                sincPosition = ((float)(nbrInternalSamplesInUse-(radius+1))-samplePhase)*stretch;
 
                 for (int j = 0; j < nbrInternalSamplesInUse; j++)
                 {
@@ -567,7 +567,7 @@ namespace LabSeven
                 //prepare parameters for next interpolation
                 samplePhase += sampleStep;
                 nbrSamplesRequired = (int)floor(samplePhase);
-                samplePhase -= (double)nbrSamplesRequired;
+                samplePhase -= (float)nbrSamplesRequired;
             }
 
             inline void getNextFrameAtExternalSampleRateCubic(TLS3340VCOFrame *f)
@@ -596,7 +596,7 @@ namespace LabSeven
                 //prepare parameters for next interpolation
                 samplePhase += sampleStep;
                 nbrSamplesRequired = (int)floor(samplePhase);
-                samplePhase -= (double)nbrSamplesRequired;
+                samplePhase -= (float)nbrSamplesRequired;
             }
 
             TLS3340VCO()
