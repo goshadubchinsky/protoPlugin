@@ -28,7 +28,7 @@ public:
     double GetFilterHighpass();
 
     // get filter output
-    double GetFilterOutput();
+    //double GetFilterOutput();
 
     // reset state
     void ResetFilterState();
@@ -51,7 +51,7 @@ private:
     double u_t1;
 
     // Filter Output
-    double out;
+    // double out;
 
 };
 

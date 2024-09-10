@@ -55,39 +55,41 @@ struct KOCMOCSVF : Module {
 	}
 
 	float input = {0.f};
-	float cutoff = params[FREQ_PARAM].getValue();
-    float lincv_atten = params[LIN_PARAM].getValue();
-    float expcv_atten = params[EXP_PARAM].getValue();
-    float reso = params[RES_PARAM].getValue();
+	float cutoff = {0.f};
+    float lincv_atten = {0.f};
+    float expcv_atten = {0.f};
+    float reso = {0.f};
 
 	void process(const ProcessArgs& args) override {
 
-		// Inputs
-		input = inputs[IN1_INPUT].getVoltageSum();
-
-		// Params
-		cutoff = params[FREQ_PARAM].getValue();
-		lincv_atten = params[LIN_PARAM].getValue();
-		expcv_atten = params[EXP_PARAM].getValue();
-		reso = params[RES_PARAM].getValue();
-
-		// Shape Panel Input For A Pseudoexponential Response
-		cutoff = 0.001f + 2.25f * (cutoff * cutoff * cutoff * cutoff);
-		lincv_atten *= lincv_atten * lincv_atten;
-		expcv_atten *= expcv_atten * expcv_atten;
-
-		// Linear CV
-		cutoff += lincv_atten * inputs[LIN_INPUT].getVoltage() / 10.f;
-
-		// Exponential CV
-		cutoff = cutoff * std::pow(2.f, expcv_atten * inputs[EXP_INPUT].getVoltage());
-
-		// Set Filter Parameters
-		svf.SetFilterCutoff((double)(cutoff));
-		svf.SetFilterResonance((double)(reso));
-
-		if (inputs[IN1_INPUT].isConnected())
+		if (outputs[LP_OUTPUT].isConnected() || outputs[BP_OUTPUT].isConnected() || outputs[HP_OUTPUT].isConnected())
 		{
+			// Inputs
+			input = inputs[IN1_INPUT].getVoltageSum();
+	
+			// Params
+			cutoff = params[FREQ_PARAM].getValue();
+			lincv_atten = params[LIN_PARAM].getValue();
+			expcv_atten = params[EXP_PARAM].getValue();
+			reso = params[RES_PARAM].getValue();
+	
+			// Shape Panel Input For A Pseudoexponential Response
+			cutoff = 0.001 + 2.25 * (cutoff * cutoff * cutoff * cutoff);
+			lincv_atten *= lincv_atten * lincv_atten;
+			expcv_atten *= expcv_atten * expcv_atten;
+	
+			// Linear CV
+			//channelCutoff += lincv_atten*inputs[LINCV_INPUT].getVoltage(ii)/10.f;
+			cutoff += lincv_atten * inputs[LIN_INPUT].getVoltage() / 10.f;
+	
+			// Exponential CV
+			//channelCutoff = channelCutoff * std::pow(2.f, expcv_atten*inputs[EXPCV_INPUT].getVoltage(ii));
+			cutoff = cutoff * std::pow(2.f, expcv_atten * inputs[EXP_INPUT].getVoltage());
+	
+			// Set Filter Parameters
+			svf.SetFilterCutoff((double)(cutoff));
+			svf.SetFilterResonance((double)(reso));
+
 			// Tick Filter State
 			svf.filter((double)(input));
 

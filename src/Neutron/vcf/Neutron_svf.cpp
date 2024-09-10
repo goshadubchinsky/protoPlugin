@@ -19,7 +19,8 @@ NeutronSVF::NeutronSVF(double cutoffFrequency, double Resonance, double sampleRa
 
     // Initialize Filter State
     SetFilterIntegrationRate();
-    hp = bp = lp = out = u_t1 = 0.0;
+    //hp = bp = lp = out = u_t1 = 0.0;
+    hp = bp = lp = u_t1 = 0.0;
 }
 
 // Default Constructor
@@ -33,13 +34,14 @@ NeutronSVF::NeutronSVF()
     SetFilterIntegrationRate();
 
     // Initialize Filter State
-    hp = bp = lp = out = u_t1 = 0.0;
+    //hp = bp = lp = out = u_t1 = 0.0;
+    hp = bp = lp = u_t1 = 0.0;
 }
 
 // Default Deconstructor
 NeutronSVF::~NeutronSVF()
 {
-    //
+    //delete iir;
 }
 
 void NeutronSVF::ResetFilterState()
@@ -51,7 +53,8 @@ void NeutronSVF::ResetFilterState()
     SetFilterIntegrationRate();
 
     // Initialize Filter State
-    hp = bp = lp = out = u_t1 = 0.0;
+    //hp = bp = lp = out = u_t1 = 0.0;
+    hp = bp = lp = u_t1 = 0.0;
 }
 
 void NeutronSVF::SetFilterCutoff(double cutoffFrequency)
@@ -68,13 +71,15 @@ void NeutronSVF::SetFilterResonance(double Resonance)
 void NeutronSVF::SetFilterSampleRate(double sampleRate)
 {
     this->sampleRate = sampleRate;
+
     SetFilterIntegrationRate();
 }
 
 void NeutronSVF::SetFilterIntegrationRate()
 {
     // Normalize Cutoff Freq To Samplerate
-    this->dt = 44100.0 / (this->sampleRate * this->cutoffFrequency);
+    //this->dt = 44100.0 / (this->sampleRate * this->cutoffFrequency);
+    this->dt = 44100.0 / (sampleRate * (double)(1)) * this->cutoffFrequency;
 
     // Clamp Integration Rate
     if(this->dt < 0.0)
@@ -94,10 +99,10 @@ double NeutronSVF::GetFilterResonance()
   return this->Resonance;
 }
 
-double NeutronSVF::GetFilterOutput()
-{
-  return this->out;
-}
+//double NeutronSVF::GetFilterOutput()
+//{
+//  return this->out;
+//}
 
 double NeutronSVF::GetFilterSampleRate()
 {
@@ -135,7 +140,7 @@ void NeutronSVF::filter(double input)
     double alpha2 = dt2 * dt2 / 4.0 + fb * alpha;
     double D_t = (1.0 - dt2 * dt2 / 4.0) * this->bp + alpha * (this->u_t1 + input - 2.0 * this->lp - fb * this->bp - SinhPade54(this->bp));
     double x_k, x_k2;
-    
+
     // Starting Point Is Last Output
     x_k = this->bp;
 
