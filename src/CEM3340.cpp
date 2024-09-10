@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "Neutron/vco/LabSeven_3340_VCO.h"
 #include <time.h>
-#include "chowdsp/shared/VariableOversampling.hpp"
+#include "chowdsp/ChowDSP.hpp"
 #include <fstream>
 using namespace std;
 
@@ -68,6 +68,9 @@ struct CEM3340 : Module {
 		LIGHTS_LEN
 	};
 
+	chowdsp::VariableOversampling<6, float> oversample; 	// uses a 2*6=12th order Butterworth filter
+	int oversamplingIndex = 1; 	// default is 2^oversamplingIndex == x2 oversampling
+
 	//VCO instance and VCO output frame
     LabSeven::LS3340::TLS3340VCO vco;
     LabSeven::LS3340::TLS3340VCOFrame nextFrame;
@@ -118,7 +121,7 @@ struct CEM3340 : Module {
 		configOutput(OUT_TRIANGLE, "TRIANGLE");
 		configOutput(OUT_MIX, "MIX");
 
-		oversample.setOversamplingIndex(0); // default 4x oversampling
+		//oversample.setOversamplingIndex(0); // default 4x oversampling
 		onSampleRateChange();
 	}
 
@@ -134,16 +137,17 @@ struct CEM3340 : Module {
 	float mix;
 
 	void onSampleRateChange() override {
-        float newSampleRate = getSampleRate();
-        oversample.reset(newSampleRate);
-    }
-
-	void onReset() override {
-        Module::onReset();
-        oversample.reset(getSampleRate());
+        //float newSampleRate = getSampleRate();
+        //oversample.reset(newSampleRate);
+		sampleRateCurrent = APP->engine->getSampleRate();
+		oversample.setOversamplingIndex(oversamplingIndex);
+		oversample.reset(sampleRateCurrent);
+		vco.setSamplerateExternal(sampleRateCurrent);
     }
 
 	void process(const ProcessArgs& args) override {
+
+		const int oversamplingRatio = oversample.getOversamplingRatio();
 
 		//update external sample rate if neccessary
     	if (sampleTimeCurrent != args.sampleTime)
@@ -269,7 +273,7 @@ struct CEM3340 : Module {
 				float* osBuffer = oversample.getOSBuffer();
 				float gain = 2.f;
 				gain = clamp(gain, 0.01f, 10.f);
-				for(int k = 0; k < oversample.getOversamplingRatio(); k++)
+				for(int k = 0; k < oversamplingRatio; ++k)
             	{
 					osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain); //{osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain);}
 				}
@@ -304,12 +308,42 @@ struct CEM3340 : Module {
 
 	}
 
-	VariableOversampling<> oversample;
+	//VariableOversampling<> oversample;
 
-private:
+	json_t* dataToJson() override{
+		json_t* rootJ = json_object();
+		//json_object_set_new(rootJ, "blockTZFMDC", json_boolean(blockTZFMDC));
+		//json_object_set_new(rootJ, "removePulseDC", json_boolean(removePulseDC));
+		//json_object_set_new(rootJ, "limitPW", json_boolean(limitPW));
+		json_object_set_new(rootJ, "oversamplingIndex", json_integer(oversample.getOversamplingIndex()));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+
+		//json_t* blockTZFMDCJ = json_object_get(rootJ, "blockTZFMDC");
+		//if (blockTZFMDCJ) {
+		//	blockTZFMDC = json_boolean_value(blockTZFMDCJ);
+		//}
+
+		//json_t* removePulseDCJ = json_object_get(rootJ, "removePulseDC");
+		//if (removePulseDCJ) {
+		//	removePulseDC = json_boolean_value(removePulseDCJ);
+		//}
+
+		//json_t* limitPWJ = json_object_get(rootJ, "limitPW");
+		//if (limitPWJ) {
+		//	limitPW = json_boolean_value(limitPWJ);
+		//}
+
+		json_t* oversamplingIndexJ = json_object_get(rootJ, "oversamplingIndex");
+		if (oversamplingIndexJ) {
+			oversamplingIndex = json_integer_value(oversamplingIndexJ);
+			onSampleRateChange();
+		}
+	}
 
 };
-
 
 struct CEM3340Widget : ModuleWidget {
 	CEM3340Widget(CEM3340* module) {
@@ -366,10 +400,36 @@ struct CEM3340Widget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(118.872, 118.296)), module, CEM3340::OUT_MIX));
 	}
 
-	void appendContextMenu(Menu *menu) override {
-        menu->addChild(new MenuSeparator());
-        dynamic_cast<CEM3340*> (module)->oversample.addContextMenu(menu, module);
-    }
+	//void appendContextMenu(Menu *menu) override {
+    //    menu->addChild(new MenuSeparator());
+    //    dynamic_cast<CEM3340*> (module)->oversample.addContextMenu(menu, module);
+    //}
+
+	void appendContextMenu(Menu* menu) override {
+		CEM3340* module = dynamic_cast<CEM3340*>(this->module);
+		assert(module);
+
+		menu->addChild(new MenuSeparator());
+		//menu->addChild(createSubmenuItem("Hardware compatibility", "",
+		//[ = ](Menu * menu) {
+		//	menu->addChild(createBoolPtrMenuItem("Filter TZFM DC", "", &module->blockTZFMDC));
+		//	menu->addChild(createBoolPtrMenuItem("Limit pulsewidth (5\%-95\%)", "", &module->limitPW));
+		//	menu->addChild(createBoolPtrMenuItem("Remove pulse DC", "", &module->removePulseDC));
+		//}
+		//                                ));
+
+		menu->addChild(createIndexSubmenuItem("Oversampling",
+		{"Off", "x2", "x4", "x8"},
+		[ = ]() {
+			return module->oversamplingIndex;
+		},
+		[ = ](int mode) {
+			module->oversamplingIndex = mode;
+			module->onSampleRateChange();
+		}
+		                                     ));
+
+	}
 
 };
 
