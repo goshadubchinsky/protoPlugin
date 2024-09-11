@@ -128,6 +128,8 @@ struct PROTO6 : Module {
 
 		configBypass(IN1_INPUT, OUT1_OUTPUT);
 		configBypass(IN2_INPUT, OUT2_OUTPUT);
+		configBypass(IN3_INPUT, OUT3_OUTPUT);
+		configBypass(IN4_INPUT, OUT4_OUTPUT);
 
 		oversample.setOversamplingIndex(2); // default 4x oversampling
 		onSampleRateChange();

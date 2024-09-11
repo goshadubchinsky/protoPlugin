@@ -139,7 +139,7 @@ struct CEM3340 : Module {
 	void onSampleRateChange() override {
         //float newSampleRate = getSampleRate();
         //oversample.reset(newSampleRate);
-		sampleRateCurrent = APP->engine->getSampleRate();
+		sampleRateCurrent = getSampleRate();
 		oversample.setOversamplingIndex(oversamplingIndex);
 		oversample.reset(sampleRateCurrent);
 		vco.setSamplerateExternal(sampleRateCurrent);

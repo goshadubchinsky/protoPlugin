@@ -26,14 +26,14 @@ public:
 
     void setCircuitParams(float input_gain, float offset, float cutoff)  //input_gain 0, 30, 1
     {
-        dp.setDiodeParameters(2.52e-9f, 0.02585f, 16);
+        //dp.setDiodeParameters(2.52e-9f, 0.02585f, 16);
         constexpr auto Cap = 47.0e-9f;
         
         //const auto Res = 1.f / (2.f * 3.141592653589793238L * (this->sampleRate * 0.5f) * Cap);
         const auto Res = 1.f / (2.f * 3.141592653589793238L * cutoff * Cap);
         C1.setCapacitanceValue(Cap);
         R1.setResistanceValue(Res);
-        this->input_gain = input_gain;
+        this->input_gain = input_gain / 10.f;
         this->offset = offset;
     }
 
@@ -46,7 +46,8 @@ public:
         auto y = voltage<float>(C1);
         P1.incident(dp.reflected());
 
-        return y;
+        return  y * 11.1f;
+
     }
 
 private:
@@ -54,7 +55,7 @@ private:
     float applyInputGain(float input)
     {
         //input *= this->input_gain * 1.5f * 1.104f;
-        input *= this->input_gain * 1.5f;
+        input *= this->input_gain;
         return input;
     }
 
@@ -67,7 +68,12 @@ private:
     WDFSeriesT<float, decltype (Vs), decltype (R1)> S1 { Vs, R1 };
     CapacitorT<float> C1 { 47.0e-9f };
     WDFParallelT<float, decltype (S1), decltype (C1)> P1 { S1, C1 };
-    DiodePairT<float, decltype (P1)> dp { P1, 2.52e-9f };   // GZ34 diode pair
+    DiodePairT<float, decltype (P1)> dp { P1, 2.52e-9f };           // GZ34         diode pair
+    //DiodePairT<float, decltype (P1)> dp { P1, 4.0e-12f };           // 1N4148       diode pair
+    //DiodePairT<float, decltype (P1)> dp { P1, 15.0e-12f };          // 1N4007       diode pair
+    //DiodePairT<float, decltype (P1)> dp { P1, 2.0e-12f };           // BAT46        diode pair
+    //DiodePairT<float, decltype (P1)> dp { P1, 50.0e-12f };          // Zener        diode pair
+
 };
 
 #endif // DIODECLIPPER_H_INCLUDED

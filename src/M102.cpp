@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
-#include "chowdsp/shared/VariableOversampling.hpp"
+#include "chowdsp/ChowDSP.hpp"
 
 struct M102 : Module {
 	enum ParamId {
@@ -30,6 +30,8 @@ struct M102 : Module {
 
 	// channels
 	static const int channels = 2;
+	chowdsp::VariableOversampling<6, float> oversample[2]; 	// uses a 2*6=12th order Butterworth filter
+	int oversamplingIndex = 1; 	// default is 2^oversamplingIndex == x2 oversampling
 
 	M102() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -60,11 +62,7 @@ struct M102 : Module {
 		configBypass(IN_INPUT + 0, OUT_OUTPUT + 0);
 		configBypass(IN_INPUT + 1, OUT_OUTPUT + 1);
 
-		for(int c = 0; c < channels; c++)
-		{
-			oversample[c].setOversamplingIndex(2); // default 4x oversampling
-		}
-
+		//oversample.setOversamplingIndex(0); // default 4x oversampling
 		onSampleRateChange();
 
 	}
@@ -93,26 +91,33 @@ struct M102 : Module {
 
 	void onSampleRateChange() override
 	{
+		float newSampleRate = getSampleRate();
+		
 		for (int c = 0; c < channels; ++c)
 		{
-			float newSampleRate = getSampleRate();
+			
+			
+			oversample[c].setOversamplingIndex(oversamplingIndex);
+			oversample[c].reset(newSampleRate);
+
 			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
 			diode_clipper[c].reset();
-			oversample[c].reset(newSampleRate);
+			
 		}
-
-		oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
 	}
 
     void onReset() override {
         Module::onReset();
+
+		float newSampleRate = getSampleRate();
+
 		for (int c = 0; c < channels; ++c)
 		{
+			oversample[c].setOversamplingIndex(oversamplingIndex);
+			oversample[c].reset(newSampleRate);
 			diode_clipper[c].reset();
-			oversample[c].reset(getSampleRate());
 		}
 
-		oversample[1].setOversamplingIndex(oversample[0].getOversamplingIndex());
     }
 
 	void process(const ProcessArgs& args) override {
@@ -165,6 +170,7 @@ struct M102 : Module {
 					osBuffer[k] = diode_clipper[c].processSample(osBuffer[k]);
 				}
 
+				//output[c] = (oversample[c].getOversamplingRatio() > 1) ? output_param * oversample[c].downsample() : osBuffer[c];
 				output[c] = output_param * oversample[c].downsample();
 
 				outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
@@ -182,8 +188,6 @@ struct M102 : Module {
 		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(args.sampleTime));
 		
 	}
-
-	VariableOversampling<> oversample[channels];
 
 private:
 
@@ -221,12 +225,24 @@ struct M102Widget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(6.716, 114.255)), module, M102::OUT_OUTPUT+1));
 	}
 
-	void appendContextMenu(Menu *menu) override {
-        menu->addChild(new MenuSeparator());
+	void appendContextMenu(Menu* menu) override {
+		M102* module = dynamic_cast<M102*>(this->module);
+		assert(module);
 
-		dynamic_cast<M102*> (module)->oversample[0].addContextMenu(menu, module);
-        
-    }
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(createIndexSubmenuItem("Oversampling",
+		{"Off", "x2", "x4", "x8"},
+		[ = ]() {
+			return module->oversamplingIndex;
+		},
+		[ = ](int mode) {
+			module->oversamplingIndex = mode;
+			module->onSampleRateChange();
+		}
+		                                     ));
+
+	}
 
 };
 
