@@ -109,8 +109,8 @@ struct ScrewKnobBlue : RoundKnob {
         bg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/ScrewKnobBlue_bg.svg")));
         //minAngle = -0.75*M_PI;
 		//maxAngle = 0.75*M_PI;
-        minAngle = -6.f*M_PI;
-		maxAngle = 6.f*M_PI;
+        minAngle = -12.f*M_PI;
+		maxAngle = 12.f*M_PI;
         shadow->opacity = 0;
     }
 };

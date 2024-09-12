@@ -36,8 +36,8 @@ struct M102 : Module {
 	M102() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configParam(INPUT_PARAM, 0.f, 10.f, 1.f, "Input Gain Multiplier");
-		configParam(OFFSET_PARAM, -20.f, 20.f, 0.f, "Voltage Offset", " V");
-		configParam(OUTPUT_PARAM, 0.f, 2.f, 1.f, "Output Gain Multiplier");
+		configParam(OFFSET_PARAM, -10.f, 10.f, 0.f, "Voltage Offset", " V");
+		configParam(OUTPUT_PARAM, 0.f, 4.f, 1.f, "Output Gain Multiplier");
 		configParam(CV1_PARAM, 0.f, 1.f, 1.f, "CV1 Attenuator");
 		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter");
 
@@ -158,7 +158,7 @@ struct M102 : Module {
 			if (inputs[IN_INPUT + c].isConnected() && outputs[OUT_OUTPUT + c].isConnected())
 			{
 				diode_clipper[c].setCircuitParams(input_param, offset_param, cutoff[c]);
-				input[c] = inputs[IN_INPUT + c].getVoltageSum();
+				input[c] = inputs[IN_INPUT + c].getVoltageSum() * 0.2f;
 				//upsampler[c].process(input[c], upsampled[c]);
 
 				oversample[c].upsample(input[c]);
@@ -171,7 +171,7 @@ struct M102 : Module {
 				}
 
 				//output[c] = (oversample[c].getOversamplingRatio() > 1) ? output_param * oversample[c].downsample() : osBuffer[c];
-				output[c] = output_param * oversample[c].downsample();
+				output[c] = output_param * oversample[c].downsample() * 5.f;
 
 				outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
 			}
