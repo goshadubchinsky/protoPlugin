@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
 #include "chowdsp/ChowDSP.hpp"
+#include "dsp/dc_blocker.hpp"
 
 struct M102 : Module {
 	enum ParamId {
@@ -35,9 +36,9 @@ struct M102 : Module {
 
 	M102() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(INPUT_PARAM, 0.f, 10.f, 1.f, "Input Gain Multiplier");
+		configParam(INPUT_PARAM, 0.f, 10.f, 0.5f, "Input Gain Multiplier");
 		configParam(OFFSET_PARAM, -10.f, 10.f, 0.f, "Voltage Offset", " V");
-		configParam(OUTPUT_PARAM, 0.f, 4.f, 1.f, "Output Gain Multiplier");
+		configParam(OUTPUT_PARAM, 0.f, 4.f, 2.f, "Output Gain Multiplier");
 		configParam(CV1_PARAM, 0.f, 1.f, 1.f, "CV1 Attenuator");
 		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter");
 
@@ -83,7 +84,11 @@ struct M102 : Module {
 	float cutoff[channels] = {0.f};
 
 	//CLASSES
-	DiodeClipper diode_clipper[channels];
+	DiodeClipper<float> diode_clipper[channels];
+	int diode_type = 1;
+	int capacitor_type = 1;
+	DC_Blocker<float> dc_blocker[channels];
+	bool dc_blocker_active = true;
 	
 	//OTHER
 	float gate_length{0.5f};
@@ -95,14 +100,17 @@ struct M102 : Module {
 		
 		for (int c = 0; c < channels; ++c)
 		{
-			
-			
 			oversample[c].setOversamplingIndex(oversamplingIndex);
 			oversample[c].reset(newSampleRate);
 
+			diode_clipper[c].setDiodeType(diode_type);
+			diode_clipper[c].setCapacitorType(capacitor_type);
 			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
 			diode_clipper[c].reset();
-			
+			if (dc_blocker_active)
+			{
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			}
 		}
 	}
 
@@ -115,9 +123,16 @@ struct M102 : Module {
 		{
 			oversample[c].setOversamplingIndex(oversamplingIndex);
 			oversample[c].reset(newSampleRate);
+			
+			diode_clipper[c].setDiodeType(diode_type);
+			diode_clipper[c].setCapacitorType(capacitor_type);
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
 			diode_clipper[c].reset();
+			if (dc_blocker_active)
+			{
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			}
 		}
-
     }
 
 	void process(const ProcessArgs& args) override {
@@ -144,7 +159,7 @@ struct M102 : Module {
 			}
 
 			output_param = params[OUTPUT_PARAM].getValue();
-			offset_param = params[OFFSET_PARAM].getValue();
+			offset_param = params[OFFSET_PARAM].getValue() / 10.f;
 		}
 
 		for (int c = 0; c < channels; ++c)
@@ -168,10 +183,17 @@ struct M102 : Module {
 				for (int k = 0; k < oversample[c].getOversamplingRatio(); k++)
 				{
 					osBuffer[k] = diode_clipper[c].processSample(osBuffer[k]);
+					osBuffer[k] += offset_param * 0.5f;
 				}
 
 				//output[c] = (oversample[c].getOversamplingRatio() > 1) ? output_param * oversample[c].downsample() : osBuffer[c];
 				output[c] = output_param * oversample[c].downsample() * 5.f;
+
+				if (dc_blocker_active)
+				{
+					output[c] = dc_blocker[c].process(output[c], (float)1.f);
+				}
+				
 
 				outputs[OUT_OUTPUT + c].setVoltage(clamp(-output[c], -10.f, 10.f));
 			}
@@ -231,19 +253,43 @@ struct M102Widget : ModuleWidget {
 
 		menu->addChild(new MenuSeparator());
 
-		menu->addChild(createIndexSubmenuItem("Oversampling",
-		{"Off", "x2", "x4", "x8"},
-		[ = ]() {
+		menu->addChild(createIndexSubmenuItem("Diode Type",{"GZ34", "1N4148", "1N4007", "BAT46", "Zener"},
+		[ = ]()
+		{
+			return module->diode_type;
+		},
+		[ = ](int mode)
+		{
+			module->diode_type = mode;
+			module->onSampleRateChange();
+		}));
+
+		menu->addChild(createIndexSubmenuItem("Capacitor Type",{"47 nF - Ceramic", "100 nF - Ceramic", "10 µF - Film", "22 µF - Tantalum"},
+		[ = ]()
+		{
+			return module->capacitor_type;
+		},
+		[ = ](int mode)
+		{
+			module->capacitor_type = mode;
+			module->onSampleRateChange();
+		}));
+
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(createIndexSubmenuItem("Oversampling",{"Off", "x2", "x4", "x8"},
+		[ = ]()
+		{
 			return module->oversamplingIndex;
 		},
-		[ = ](int mode) {
+		[ = ](int mode)
+		{
 			module->oversamplingIndex = mode;
 			module->onSampleRateChange();
-		}
-		                                     ));
+		}));
 
+		menu->addChild(createBoolPtrMenuItem("DC Blocker", "", &module->dc_blocker_active));
 	}
-
 };
 
 
