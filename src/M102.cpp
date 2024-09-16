@@ -39,6 +39,7 @@ struct M102 : Module {
 		configParam(INPUT_PARAM, 0.f, 10.f, 0.5f, "Input Gain Multiplier");
 		configParam(OFFSET_PARAM, -10.f, 10.f, 0.f, "Voltage Offset", " V");
 		configParam(OUTPUT_PARAM, 0.f, 4.f, 2.f, "Output Gain Multiplier");
+			paramQuantities[OUTPUT_PARAM]->randomizeEnabled = false;
 		configParam(CV1_PARAM, 0.f, 1.f, 1.f, "CV1 Attenuator");
 		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter");
 
@@ -48,7 +49,7 @@ struct M102 : Module {
 		const float minFreq = (std::log2(minFreqHz / dsp::FREQ_C4) + 5) / 10;
 		const float maxFreq = (std::log2(maxFreqHz / dsp::FREQ_C4) + 5) / 10;
 		//const float defaultFreq = (std::log2(defaultFreqHz / dsp::FREQ_C4) + 5) / 10;
-		configParam(CUTOFF_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 1.f, -minFreq);
+		configParam(CUTOFF_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 10.f/(maxFreq-minFreq), -minFreq * (10.f/(maxFreq-minFreq)) );
 
 		configInput(IN_INPUT+0, "Left");
 		configInput(IN_INPUT+1, "Right");
