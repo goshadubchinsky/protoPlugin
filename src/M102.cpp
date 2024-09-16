@@ -48,7 +48,7 @@ struct M102 : Module {
 		const float minFreq = (std::log2(minFreqHz / dsp::FREQ_C4) + 5) / 10;
 		const float maxFreq = (std::log2(maxFreqHz / dsp::FREQ_C4) + 5) / 10;
 		//const float defaultFreq = (std::log2(defaultFreqHz / dsp::FREQ_C4) + 5) / 10;
-		configParam(CUTOFF_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " Hz", std::pow(2, 10.f), dsp::FREQ_C4 / std::pow(2, 5.f));
+		configParam(CUTOFF_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 1.f, -minFreq);
 
 		configInput(IN_INPUT+0, "Left");
 		configInput(IN_INPUT+1, "Right");
@@ -209,6 +209,41 @@ struct M102 : Module {
 		{gateGenerator.trigger(gate_length);}
 		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(args.sampleTime));
 		
+	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "dc_blocker_active", json_boolean(dc_blocker_active));
+		json_object_set_new(rootJ, "diode_type", json_integer(diode_type));
+		json_object_set_new(rootJ, "capacitor_type", json_integer(capacitor_type));
+		json_object_set_new(rootJ, "oversamplingIndex", json_integer(oversample[0].getOversamplingIndex()));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+
+		json_t* dc_blocker_active_J = json_object_get(rootJ, "dc_blocker_active");
+		if (dc_blocker_active_J) {
+			dc_blocker_active = json_boolean_value(dc_blocker_active_J);
+		}
+
+		json_t* diode_type_J = json_object_get(rootJ, "diode_type");
+		if (diode_type_J) {
+			diode_type = json_integer_value(diode_type_J);
+			onSampleRateChange();
+		}
+
+		json_t* capacitor_type_J = json_object_get(rootJ, "capacitor_type");
+		if (capacitor_type_J) {
+			capacitor_type = json_integer_value(capacitor_type_J);
+			onSampleRateChange();
+		}
+
+		json_t* oversamplingIndexJ = json_object_get(rootJ, "oversamplingIndex");
+		if (oversamplingIndexJ) {
+			oversamplingIndex = json_integer_value(oversamplingIndexJ);
+			onSampleRateChange();
+		}
 	}
 
 private:
