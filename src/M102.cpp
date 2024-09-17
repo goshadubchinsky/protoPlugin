@@ -40,8 +40,8 @@ struct M102 : Module {
 		configParam(OFFSET_PARAM, -10.f, 10.f, 0.f, "Voltage Offset", " V");
 		configParam(OUTPUT_PARAM, 0.f, 4.f, 2.f, "Output Gain Multiplier");
 			paramQuantities[OUTPUT_PARAM]->randomizeEnabled = false;
-		configParam(CV1_PARAM, 0.f, 1.f, 1.f, "CV1 Attenuator");
-		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter");
+		configParam(CV1_PARAM, 0.f, 1.f, 1.f, "CV1 Attenuator", "", 0.f, 10.f);
+		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter", "", 0.f, 5.f);
 
 		const float minFreqHz = 16.0f;
 		const float maxFreqHz = 22000.0f;
@@ -85,7 +85,7 @@ struct M102 : Module {
 	float cutoff[channels] = {0.f};
 
 	//CLASSES
-	DiodeClipper<float> diode_clipper[channels];
+	DiodeClipper<float, int> diode_clipper[channels];
 	int diode_type = 1;
 	int capacitor_type = 1;
 	DC_Blocker<float> dc_blocker[channels];
