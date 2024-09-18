@@ -4,9 +4,6 @@
 #include "chowdsp/diode_clipper_wdf_class.hpp"
 
 using b_float = xsimd::batch<float>;
-//using b_int = xsimd::batch<int>;
-//using simd::float_4;
-
 
 template <typename T>
 xsimd::batch<T> tanh_Pade_XSIMD(xsimd::batch<T> x) {
@@ -22,11 +19,10 @@ xsimd::batch<T> tanh_Pade_XSIMD(xsimd::batch<T> x) {
 }
 
 template <typename T>
-static T tanh_Pade(T x) {
-	// return std::tanh(x);
-	// Pade approximant of tanh
-	x = simd::clamp(x, -3.f, 3.f);
-	return x * (27 + x * x) / (27 + 9 * x * x);
+static T plushalf_normal(T x) {
+
+	x += 0.5;
+	return x;
 }
 
 struct M102XSIMD : Module {
@@ -85,56 +81,42 @@ struct M102XSIMD : Module {
 		onSampleRateChange();
 	}
 
-	std::array<float, 16> input_array;
-    std::array<float, 16> output_array;
-
-	b_float input_batch[4] ={0.f};
-	b_float output_batch[4] ={0.f};
-
+	xsimd::batch<float> input_batch[4] = {0.f};
+	
     void process(const ProcessArgs& args) override
     {
         const int channels = inputs[INPUT_INPUT].getChannels();
-
-        if (channels > 1)
+		if (channels > 1)
         {
-            for (int c = 0; c < channels; ++c)
+			float* voltage_ptr = inputs[INPUT_INPUT].getVoltages();
+			int batch_size = xsimd::batch<float>::size;
+			for (int x = 0; x < channels; x += batch_size)
+			{
+				int batch_index = x / batch_size;
+       			input_batch[batch_index] = xsimd::load_aligned(&voltage_ptr[x]);
+				input_batch[batch_index] = xsimd::sin(xsimd::tanh(input_batch[batch_index])); //TEST MATH
+				input_batch[batch_index].store_aligned(&voltage_ptr[x]);
+			}
+
+			for (int o = 0; o < channels; ++o)
             {
-                // Populate input_array with voltages
-                input_array[c] = inputs[INPUT_INPUT].getVoltage(c);
+                outputs[OUTPUT_OUTPUT].setVoltage(voltage_ptr[o], o);
             }
-
-			const int batch_size = b_float::size; // Get the batch size for the current platform
-
-            // Process in SIMD batches of 4 (assuming batch size is 4 floats)
-            for (int c = 0; c < channels; c += batch_size)
-            {
-                // Load the data from input_array into an SIMD batch
-                input_batch[c / batch_size] = xsimd::load_aligned(input_array.data() + c);
-
-                // Process the input_batch
-                input_batch[c / batch_size] *= 0.2f;
-                output_batch[c / batch_size] = tanh_Pade_XSIMD(input_batch[c / batch_size]);
-
-                // Store the SIMD result back into output_array
-                output_batch[c / batch_size].store_aligned(output_array.data() + c);
-            }
-
-            // Set output voltages from output_array
-            for (int c = 0; c < channels; ++c)
-            {
-                outputs[OUTPUT_OUTPUT].setVoltage(output_array[c] * 5.f, c);
-            }
-
-            // Set the number of output channels
+			
             outputs[OUTPUT_OUTPUT].setChannels(channels);
         }
         else if (channels == 1)
         {
             // Monophonic case
-            float input = inputs[INPUT_INPUT].getVoltage() * 0.2f;
-            input = tanh_Pade(input);
-            outputs[OUTPUT_OUTPUT].setVoltage(input * 5.f);
+            float input = inputs[INPUT_INPUT].getVoltage();
+            input = sin(tanh(input));
+            outputs[OUTPUT_OUTPUT].setVoltage(input);
+			outputs[OUTPUT_OUTPUT].setChannels(channels);
         }
+		else if (channels == 0)
+		{
+			outputs[OUTPUT_OUTPUT].setVoltage(0.f);
+		}
     }
 
 	
