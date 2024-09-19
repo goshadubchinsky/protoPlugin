@@ -1,29 +1,9 @@
 #include "plugin.hpp"
-#include "chowdsp/ChowDSP.hpp"
+#include "chowdsp/ChowDSP_XSIMD.hpp"
 #include "dsp/dc_blocker.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
 
 using b_float = xsimd::batch<float>;
-
-template <typename T>
-xsimd::batch<T> tanh_Pade_XSIMD(xsimd::batch<T> x) {
-    using batch_type = xsimd::batch<T>;
-
-    // Pade approximant of tanh
-    x = xsimd::max(xsimd::min(x, batch_type(3.f)), batch_type(-3.f)); // Clamp within [-3.f, 3.f]
-
-    batch_type numerator = x * (batch_type(27) + x * x);
-    batch_type denominator = batch_type(27) + batch_type(9) * x * x;
-
-    return numerator / denominator;
-}
-
-template <typename T>
-static T plushalf_normal(T x) {
-
-	x += 0.5;
-	return x;
-}
 
 struct M102XSIMD : Module {
 	enum ParamId {
@@ -50,6 +30,10 @@ struct M102XSIMD : Module {
 		LIGHT_LIGHT,
 		LIGHTS_LEN
 	};
+
+	static const int batch_size = 4;
+	chowdsp::VariableOversampling<6, b_float> oversample[batch_size];	// uses a 2*6=12th order Butterworth filter
+	int oversamplingIndex = 0;
 
 	M102XSIMD() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -81,45 +65,184 @@ struct M102XSIMD : Module {
 		onSampleRateChange();
 	}
 
-	xsimd::batch<float> input_batch[4] = {0.f};
-	
-    void process(const ProcessArgs& args) override
-    {
-        const int channels = inputs[INPUT_INPUT].getChannels();
-		if (channels > 1)
-        {
-			float* voltage_ptr = inputs[INPUT_INPUT].getVoltages();
-			int batch_size = xsimd::batch<float>::size;
-			for (int x = 0; x < channels; x += batch_size)
-			{
-				int batch_index = x / batch_size;
-       			input_batch[batch_index] = xsimd::load_aligned(&voltage_ptr[x]);
-				input_batch[batch_index] = xsimd::sin(xsimd::tanh(input_batch[batch_index])); //TEST MATH
-				input_batch[batch_index].store_aligned(&voltage_ptr[x]);
-			}
+	xsimd::batch<float> input_batch[batch_size] = {0.f};
 
-			for (int o = 0; o < channels; ++o)
-            {
-                outputs[OUTPUT_OUTPUT].setVoltage(voltage_ptr[o], o);
-            }
-			
-            outputs[OUTPUT_OUTPUT].setChannels(channels);
-        }
-        else if (channels == 1)
-        {
-            // Monophonic case
-            float input = inputs[INPUT_INPUT].getVoltage();
-            input = sin(tanh(input));
-            outputs[OUTPUT_OUTPUT].setVoltage(input);
-			outputs[OUTPUT_OUTPUT].setChannels(channels);
-        }
-		else if (channels == 0)
+	// INPUTS+p
+	//float input[channels] = {0.f};
+	float input_param{1.f}; float range_param{1.f};
+	float input_cv{0.f}; float input_cv_param{0.f};
+	float input_cv_2{0.f}; float input_cv_param_2{0.f};
+
+	// OUTPUTS+p
+	//float output[channels] = {0.f};
+	float output_param{1.f};
+
+	// PARAMS
+	float offset_param{0.f};
+	float cutoff = {0.f};
+
+	//CLASSES
+	DiodeClipper<b_float> diode_clipper[batch_size];
+	int diode_type = 1;
+	int capacitor_type = 1;
+	DC_Blocker<b_float> dc_blocker[batch_size];
+	bool dc_blocker_active = true;
+
+	//OTHER
+	float gate_length{0.5f};
+	rack::dsp::PulseGenerator gateGenerator;
+
+	void onSampleRateChange() override {
+		float newSampleRate = getSampleRate();
+		for (int c = 0; c < batch_size; c++) {
+			oversample[c].setOversamplingIndex(oversamplingIndex);
+			oversample[c].reset(newSampleRate);
+
+			diode_clipper[c].setDiodeType(diode_type);
+			diode_clipper[c].setCapacitorType(capacitor_type);
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			diode_clipper[c].reset();
+			if (dc_blocker_active)
+			{
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			}
+		}
+	}
+
+	void onReset() override {
+        Module::onReset();
+
+		float newSampleRate = getSampleRate();
+
+		for (int c = 0; c < batch_size; ++c)
 		{
-			outputs[OUTPUT_OUTPUT].setVoltage(0.f);
+			oversample[c].setOversamplingIndex(oversamplingIndex);
+			oversample[c].reset(newSampleRate);
+
+			diode_clipper[c].setDiodeType(diode_type);
+			diode_clipper[c].setCapacitorType(capacitor_type);
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			diode_clipper[c].reset();
+			if (dc_blocker_active)
+			{
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			}
 		}
     }
 
-	
+	float maxAbsValue = 0.0f;
+
+    void process(const ProcessArgs& args) override
+    {
+		range_param = params[RANGE_PARAM].getValue();
+		input_param = params[INPUT_PARAM].getValue();
+		input_param *= range_param;
+
+		if (inputs[CV2_INPUT].isConnected())
+		{
+			input_cv_param_2 = params[CV2_PARAM].getValue();
+			input_cv_2 = input_cv_param_2 * inputs[CV2_INPUT].getVoltage();
+			input_param += input_cv_2;
+		}
+
+		if (inputs[CV1_INPUT].isConnected())
+		{
+			input_cv_param = params[CV1_PARAM].getValue() * 0.1f;
+			input_cv = input_cv_param * (inputs[CV1_INPUT].getVoltage());
+			input_param *= input_cv;
+		}
+
+		output_param = params[OUTPUT_PARAM].getValue();
+		offset_param = params[OFFSET_PARAM].getValue() / 10.f;
+
+		cutoff = params[CUTOFF_PARAM].getValue();
+		cutoff = cutoff * 10.f - 5.f;
+		cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff);
+		cutoff = clamp(cutoff, 1.f, 22000.f);
+
+		
+		const int oversamplingRatio = oversample[0].getOversamplingRatio();
+		
+        const int channels = inputs[INPUT_INPUT].getChannels();
+
+		float* voltage_ptr = inputs[INPUT_INPUT].getVoltages();
+		for (int x = 0; x < channels; x += batch_size)
+		{
+			int batch_index = x / batch_size;
+       		input_batch[batch_index] = xsimd::load_aligned(&voltage_ptr[x]);
+
+			diode_clipper[batch_index].setCircuitParams(input_param, offset_param, cutoff);
+			oversample[batch_index].upsample(input_batch[batch_index]);
+			//OVERSAMPLING LOOP
+			b_float* osBuffer = oversample[batch_index].getOSBuffer();
+			for (int i = 0; i < oversamplingRatio; ++i)
+			{
+				osBuffer[i] = diode_clipper[batch_index].processSample(input_batch[batch_index] * 0.2f);
+				osBuffer[i] += offset_param * 0.5f;
+			}
+			//END OVERSAMPLING LOOP
+			//DOWNSAMPLE
+			input_batch[batch_index] = 5.f * output_param * oversample[batch_index].downsample();
+			if (dc_blocker_active)
+			{
+				input_batch[batch_index] = dc_blocker[batch_index].process(input_batch[batch_index], (float)1.f);
+			}
+			input_batch[batch_index].store_aligned(&voltage_ptr[x]);
+			
+		}
+
+		for (int o = 0; o < channels; ++o)
+        {
+            outputs[OUTPUT_OUTPUT].setVoltage(-voltage_ptr[o], o);
+			maxAbsValue = std::max(maxAbsValue, std::fabs(voltage_ptr[o]));
+        }
+
+        outputs[OUTPUT_OUTPUT].setChannels(channels);
+
+		gate_length = 0.1f;
+		if (maxAbsValue >= 10.f)
+		{gateGenerator.trigger(gate_length);}
+		maxAbsValue = 0.0f;
+		lights[LIGHT_LIGHT].setBrightness(gateGenerator.process(args.sampleTime));
+		
+    }
+
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "dc_blocker_active", json_boolean(dc_blocker_active));
+		json_object_set_new(rootJ, "diode_type", json_integer(diode_type));
+		json_object_set_new(rootJ, "capacitor_type", json_integer(capacitor_type));
+		json_object_set_new(rootJ, "oversamplingIndex", json_integer(oversample[0].getOversamplingIndex()));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+
+		json_t* dc_blocker_active_J = json_object_get(rootJ, "dc_blocker_active");
+		if (dc_blocker_active_J) {
+			dc_blocker_active = json_boolean_value(dc_blocker_active_J);
+		}
+
+		json_t* diode_type_J = json_object_get(rootJ, "diode_type");
+		if (diode_type_J) {
+			diode_type = json_integer_value(diode_type_J);
+			onSampleRateChange();
+		}
+
+		json_t* capacitor_type_J = json_object_get(rootJ, "capacitor_type");
+		if (capacitor_type_J) {
+			capacitor_type = json_integer_value(capacitor_type_J);
+			onSampleRateChange();
+		}
+
+		json_t* oversamplingIndexJ = json_object_get(rootJ, "oversamplingIndex");
+		if (oversamplingIndexJ) {
+			oversamplingIndex = json_integer_value(oversamplingIndexJ);
+			onSampleRateChange();
+		}
+	}
+
+private:
 };
 
 
@@ -151,6 +274,50 @@ struct M102XSIMDWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.716, 84.65)), module, M102XSIMD::CV2_INPUT));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(6.716, 105.6)), module, M102XSIMD::OUTPUT_OUTPUT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		M102XSIMD* module = dynamic_cast<M102XSIMD*>(this->module);
+		assert(module);
+
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(createIndexSubmenuItem("Diode Type",{"GZ34", "1N4148", "1N4007", "BAT46", "Zener"},
+		[ = ]()
+		{
+			return module->diode_type;
+		},
+		[ = ](int mode)
+		{
+			module->diode_type = mode;
+			module->onSampleRateChange();
+		}));
+	
+		menu->addChild(createIndexSubmenuItem("Capacitor Type",{"47 nF - Ceramic", "100 nF - Ceramic", "10 µF - Film", "22 µF - Tantalum"},
+		[ = ]()
+		{
+			return module->capacitor_type;
+		},
+		[ = ](int mode)
+		{
+			module->capacitor_type = mode;
+			module->onSampleRateChange();
+		}));
+	
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(createIndexSubmenuItem("Oversampling",{"Off", "x2", "x4", "x8"},
+		[ = ]()
+		{
+			return module->oversamplingIndex;
+		},
+		[ = ](int mode)
+		{
+			module->oversamplingIndex = mode;
+			module->onSampleRateChange();
+		}));
+
+		menu->addChild(createBoolPtrMenuItem("DC Blocker", "", &module->dc_blocker_active));
 	}
 };
 

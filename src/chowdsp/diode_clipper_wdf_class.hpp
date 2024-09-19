@@ -7,14 +7,14 @@
 
 using namespace chowdsp::wdft;
 
-template <typename T, typename IntType>
+template <typename T>
 class DiodeClipper
 {
 public:
 
     DiodeClipper() = default;
 
-    void setSampleRate(T sampleRate)
+    void setSampleRate(float sampleRate)
     {
         this->sampleRate = sampleRate;
         C1.prepare((T)this->sampleRate);
@@ -25,7 +25,7 @@ public:
         C1.reset();
     }
 
-    void setCircuitParams(T input_gain, T offset, T cutoff)  //input_gain 0, 30, 1
+    void setCircuitParams(float input_gain, float offset, T cutoff)  //input_gain 0, 30, 1
     {
         //constexpr auto Cap = 47.0e-9f; // 47 nF - Ceramic
         auto Cap = this->Cap; // 100 nF - Ceramic
@@ -54,7 +54,7 @@ public:
 
     }
 
-    void setDiodeType(IntType diode_type)
+    void setDiodeType(int diode_type)
     {
         switch (diode_type)
         {
@@ -80,7 +80,7 @@ public:
         }
     }
 
-    void setCapacitorType(IntType capacitor_type)
+    void setCapacitorType(int capacitor_type)
     {
         switch (capacitor_type)
         {
@@ -112,9 +112,9 @@ private:
         return input;
     }
 
-    T sampleRate{44100.f};
-    T input_gain{1.f};
-    T offset{0.f};
+    float sampleRate{44100.f};
+    float input_gain{1.f};
+    float offset{0.f};
     
     ResistorT<T> R1 { 4700.f };
     ResistiveVoltageSourceT<T> Vs;

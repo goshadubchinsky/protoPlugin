@@ -85,7 +85,7 @@ struct M102 : Module {
 	float cutoff[channels] = {0.f};
 
 	//CLASSES
-	DiodeClipper<float, int> diode_clipper[channels];
+	DiodeClipper<float> diode_clipper[channels];
 	int diode_type = 1;
 	int capacitor_type = 1;
 	DC_Blocker<float> dc_blocker[channels];
