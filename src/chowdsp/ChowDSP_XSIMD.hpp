@@ -12,20 +12,20 @@ namespace chowdsp {
 template <int ORDER, typename T = xsimd::batch<float>>
 struct IIRFilter_XSIMD {
 	/** transfer function numerator coefficients: b_0, b_1, etc.*/
-	T b[ORDER] = {};
+	xsimd::batch<float> b[ORDER] = {};
 
 	/** transfer function denominator coefficients: a_0, a_1, etc.*/
-	T a[ORDER] = {};
+	xsimd::batch<float> a[ORDER] = {};
 
 	/** filter state */
-	T z[ORDER];
+	xsimd::batch<float> z[ORDER];
 
 	IIRFilter_XSIMD() {
 		reset();
 	}
 
 	void reset() {
-		std::fill(z, &z[ORDER], 0.0f);
+		std::fill(z, &z[ORDER], xsimd::batch<float>(0.0f));
 	}
 
 	void setCoefficients(const T* b, const T* a) {
@@ -38,23 +38,23 @@ struct IIRFilter_XSIMD {
 	}
 
 	template <int N = ORDER>
-	inline typename std::enable_if <N == 2, T>::type process(T x) noexcept {
-		T y = z[1] + x * b[0];
+	inline typename std::enable_if <N == 2, T>::type process(xsimd::batch<float> x) noexcept {
+		xsimd::batch<float> y = z[1] + x * b[0];
 		z[1] = x * b[1] - y * a[1];
 		return y;
 	}
 
 	template <int N = ORDER>
-	inline typename std::enable_if <N == 3, T>::type process(T x) noexcept {
-		T y = z[1] + x * b[0];
+	inline typename std::enable_if <N == 3, T>::type process(xsimd::batch<float> x) noexcept {
+		xsimd::batch<float> y = z[1] + x * b[0];
 		z[1] = z[2] + x * b[1] - y * a[1];
 		z[2] = x * b[2] - y * a[2];
 		return y;
 	}
 
 	template <int N = ORDER>
-	inline typename std::enable_if < (N > 3), T >::type process(T x) noexcept {
-		T y = z[1] + x * b[0];
+	inline typename std::enable_if < (N > 3), T >::type process(xsimd::batch<float> x) noexcept {
+		xsimd::batch<float> y = z[1] + x * b[0];
 
 		for (int i = 1; i < ORDER - 1; ++i)
 			z[i] = z[i + 1] + x * b[i] - y * a[i];
@@ -66,7 +66,7 @@ struct IIRFilter_XSIMD {
 };
 
 template <typename T = xsimd::batch<float>>
-struct TBiquadFilter_XSIMD : IIRFilter_XSIMD<3, T> {
+struct TBiquadFilter_XSIMD : IIRFilter_XSIMD<3, xsimd::batch<float>> {
 	enum Type {
 		LOWPASS,
 		HIGHPASS,
@@ -79,7 +79,7 @@ struct TBiquadFilter_XSIMD : IIRFilter_XSIMD<3, T> {
 	};
 
 	TBiquadFilter_XSIMD() {
-		setParameters(LOWPASS, 0.f, 0.f, 1.f);
+		setParameters(LOWPASS, xsimd::batch<float>(0.f), xsimd::batch<float>(0.f), xsimd::batch<float>(1.f));
 	}
 
 	/** Calculates and sets the biquad transfer function coefficients.
@@ -87,16 +87,16 @@ struct TBiquadFilter_XSIMD : IIRFilter_XSIMD<3, T> {
 	Q: quality factor
 	V: gain
 	*/
-	void setParameters(Type type, float f, float Q, float V) {
-		float K = std::tan(M_PI * f);
+	void setParameters(Type type, xsimd::batch<float> f, xsimd::batch<float> Q, xsimd::batch<float> V) {
+		xsimd::batch<float> K = xsimd::tan(xsimd::batch<float>(M_PI) * f);
 		switch (type) {
 			case LOWPASS: {
-				float norm = 1.f / (1.f + K / Q + K * K);
+				xsimd::batch<float> norm = xsimd::batch<float>(1.f) / (xsimd::batch<float>(1.f) + K / Q + K * K);
 				this->b[0] = K * K * norm;
-				this->b[1] = 2.f * this->b[0];
+				this->b[1] = xsimd::batch<float>(2.f) * this->b[0];
 				this->b[2] = this->b[0];
-				this->a[1] = 2.f * (K * K - 1.f) * norm;
-				this->a[2] = (1.f - K / Q + K * K) * norm;
+				this->a[1] = xsimd::batch<float>(2.f) * (K * K - xsimd::batch<float>(1.f)) * norm;
+				this->a[2] = (xsimd::batch<float>(1.f) - K / Q + K * K) * norm;
 			} break;
 			default: break;
 		}
@@ -154,7 +154,7 @@ public:
 	}
 
 private:
-	TBiquadFilter_XSIMD<T> filters[N];
+	TBiquadFilter_XSIMD<xsimd::batch<float>> filters[N];
 };
 
 
@@ -204,19 +204,19 @@ public:
 	void reset(float baseSampleRate) override {
 		aaFilter_XSIMD.reset(baseSampleRate, ratio);
 		aiFilter.reset(baseSampleRate, ratio);
-		std::fill(osBuffer, &osBuffer[ratio], 0.0f);
+		std::fill(osBuffer, &osBuffer[ratio], xsimd::batch<float>(0.0f));
 	}
 
 	inline void upsample(T x) noexcept override {
 		osBuffer[0] = ratio * x;
-		std::fill(&osBuffer[1], &osBuffer[ratio], 0.0f);
+		std::fill(&osBuffer[1], &osBuffer[ratio], xsimd::batch<float>(0.0f));
 
 		for (int k = 0; k < ratio; k++)
 			osBuffer[k] = aiFilter.process(osBuffer[k]);
 	}
 
 	inline T downsample() noexcept override {
-		T y = 0.0f;
+		xsimd::batch<float> y = 0.0f;
 		for (int k = 0; k < ratio; k++)
 			y = aaFilter_XSIMD.process(osBuffer[k]);
 
@@ -227,11 +227,11 @@ public:
 		return osBuffer;
 	}
 
-	T osBuffer[ratio];
+	xsimd::batch<float> osBuffer[ratio];
 
 private:
-	AAFilter_XSIMD<filtN, T> aaFilter_XSIMD; // anti-aliasing filter
-	AAFilter_XSIMD<filtN, T> aiFilter; // anti-imaging filter
+	AAFilter_XSIMD<filtN, xsimd::batch<float>> aaFilter_XSIMD; // anti-aliasing filter
+	AAFilter_XSIMD<filtN, xsimd::batch<float>> aiFilter; // anti-imaging filter
 };
 
 //typedef Oversampling_XSIMD<1, 4, simd::float_4> Oversampling_XSIMDSIMD;
