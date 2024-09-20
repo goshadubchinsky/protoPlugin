@@ -31,9 +31,8 @@ struct M102XSIMD : Module {
 		LIGHTS_LEN
 	};
 
-	static const int batch_size = 4;
-	chowdsp::VariableOversampling<6, b_float> oversample[batch_size];	// uses a 2*6=12th order Butterworth filter
-	int oversamplingIndex = 0;
+	chowdsp::VariableOversampling_XSIMD<6, b_float> oversample[8];	// uses a 2*6=12th order Butterworth filter
+	int oversamplingIndex = 1;
 
 	M102XSIMD() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -65,7 +64,8 @@ struct M102XSIMD : Module {
 		onSampleRateChange();
 	}
 
-	xsimd::batch<float> input_batch[batch_size] = {0.f};
+	xsimd::batch<float> input_batch[4] = {0.f};
+	float output_array[16] = {0.f};
 
 	// INPUTS+p
 	//float input[channels] = {0.f};
@@ -82,10 +82,10 @@ struct M102XSIMD : Module {
 	float cutoff = {0.f};
 
 	//CLASSES
-	DiodeClipper<b_float> diode_clipper[batch_size];
+	DiodeClipper<b_float> diode_clipper[4];
 	int diode_type = 1;
 	int capacitor_type = 1;
-	DC_Blocker<b_float> dc_blocker[batch_size];
+	DC_Blocker<b_float> dc_blocker[4];
 	bool dc_blocker_active = true;
 
 	//OTHER
@@ -94,17 +94,18 @@ struct M102XSIMD : Module {
 
 	void onSampleRateChange() override {
 		float newSampleRate = getSampleRate();
+		static const int batch_size = xsimd::batch<float>::size;
 		for (int c = 0; c < batch_size; c++) {
 			oversample[c].setOversamplingIndex(oversamplingIndex);
 			oversample[c].reset(newSampleRate);
 
 			diode_clipper[c].setDiodeType(diode_type);
 			diode_clipper[c].setCapacitorType(capacitor_type);
-			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			diode_clipper[c].reset();
 			if (dc_blocker_active)
 			{
-				dc_blocker[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			}
 		}
 	}
@@ -113,6 +114,7 @@ struct M102XSIMD : Module {
         Module::onReset();
 
 		float newSampleRate = getSampleRate();
+		static const int batch_size = xsimd::batch<float>::size;
 
 		for (int c = 0; c < batch_size; ++c)
 		{
@@ -121,11 +123,11 @@ struct M102XSIMD : Module {
 
 			diode_clipper[c].setDiodeType(diode_type);
 			diode_clipper[c].setCapacitorType(capacitor_type);
-			diode_clipper[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			diode_clipper[c].reset();
 			if (dc_blocker_active)
 			{
-				dc_blocker[c].setSampleRate(newSampleRate * oversample[c].getOversamplingRatio());
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			}
 		}
     }
@@ -134,6 +136,7 @@ struct M102XSIMD : Module {
 
     void process(const ProcessArgs& args) override
     {
+		static const int batch_size = xsimd::batch<float>::size;
 		range_param = params[RANGE_PARAM].getValue();
 		input_param = params[INPUT_PARAM].getValue();
 		input_param *= range_param;
@@ -169,7 +172,8 @@ struct M102XSIMD : Module {
 		for (int x = 0; x < channels; x += batch_size)
 		{
 			int batch_index = x / batch_size;
-       		input_batch[batch_index] = xsimd::load_aligned(&voltage_ptr[x]);
+       		input_batch[batch_index] = xsimd::load_unaligned(&voltage_ptr[x]);
+       		input_batch[batch_index] *= 0.2f;
 
 			diode_clipper[batch_index].setCircuitParams(input_param, offset_param, cutoff);
 			oversample[batch_index].upsample(input_batch[batch_index]);
@@ -177,7 +181,7 @@ struct M102XSIMD : Module {
 			b_float* osBuffer = oversample[batch_index].getOSBuffer();
 			for (int i = 0; i < oversamplingRatio; ++i)
 			{
-				osBuffer[i] = diode_clipper[batch_index].processSample(input_batch[batch_index] * 0.2f);
+				osBuffer[i] = diode_clipper[batch_index].processSample(input_batch[batch_index]);
 				osBuffer[i] += offset_param * 0.5f;
 			}
 			//END OVERSAMPLING LOOP
@@ -187,14 +191,15 @@ struct M102XSIMD : Module {
 			{
 				input_batch[batch_index] = dc_blocker[batch_index].process(input_batch[batch_index], (float)1.f);
 			}
-			input_batch[batch_index].store_aligned(&voltage_ptr[x]);
+			//input_batch[batch_index].store_aligned(&output_array[x]);
+			input_batch[batch_index].store_unaligned(&output_array[x]);
 			
 		}
 
 		for (int o = 0; o < channels; ++o)
         {
-            outputs[OUTPUT_OUTPUT].setVoltage(-voltage_ptr[o], o);
-			maxAbsValue = std::max(maxAbsValue, std::fabs(voltage_ptr[o]));
+            outputs[OUTPUT_OUTPUT].setVoltage(-output_array[o], o);
+			maxAbsValue = std::max(maxAbsValue, std::fabs(output_array[o]));
         }
 
         outputs[OUTPUT_OUTPUT].setChannels(channels);

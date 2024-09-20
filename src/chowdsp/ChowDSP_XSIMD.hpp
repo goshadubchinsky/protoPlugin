@@ -4,13 +4,13 @@
 
 namespace chowdsp {
 	// code taken from https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/, commit 21701fb 
-	// * AAFilter.hpp
-	// * VariableOversampling.hpp
-	// * oversampling.hpp
+	// * AAFilter_XSIMD.hpp
+	// * VariableOversampling_XSIMD.hpp
+	// * oversampling_XSIMD.hpp
 	// * iir.hpp
 
-template <int ORDER, typename T = float>
-struct IIRFilter {
+template <int ORDER, typename T = xsimd::batch<float>>
+struct IIRFilter_XSIMD {
 	/** transfer function numerator coefficients: b_0, b_1, etc.*/
 	T b[ORDER] = {};
 
@@ -20,7 +20,7 @@ struct IIRFilter {
 	/** filter state */
 	T z[ORDER];
 
-	IIRFilter() {
+	IIRFilter_XSIMD() {
 		reset();
 	}
 
@@ -63,34 +63,10 @@ struct IIRFilter {
 
 		return y;
 	}
-
-	/** Computes the complex transfer function $H(s)$ at a particular frequency
-	s: normalized angular frequency equal to $2 \pi f / f_{sr}$ ($\pi$ is the Nyquist frequency)
-	*/
-	std::complex<T> getTransferFunction(T s) {
-		// Compute sum(a_k z^-k) / sum(b_k z^-k) where z = e^(i s)
-		std::complex<T> bSum(b[0], 0);
-		std::complex<T> aSum(1, 0);
-		for (int i = 1; i < ORDER; i++) {
-			T p = -i * s;
-			std::complex<T> z(simd::cos(p), simd::sin(p));
-			bSum += b[i] * z;
-			aSum += a[i - 1] * z;
-		}
-		return bSum / aSum;
-	}
-
-	T getFrequencyResponse(T f) {
-		return simd::abs(getTransferFunction(2 * M_PI * f));
-	}
-
-	T getFrequencyPhase(T f) {
-		return simd::arg(getTransferFunction(2 * M_PI * f));
-	}
 };
 
-template <typename T = float>
-struct TBiquadFilter : IIRFilter<3, T> {
+template <typename T = xsimd::batch<float>>
+struct TBiquadFilter_XSIMD : IIRFilter_XSIMD<3, T> {
 	enum Type {
 		LOWPASS,
 		HIGHPASS,
@@ -102,7 +78,7 @@ struct TBiquadFilter : IIRFilter<3, T> {
 		NUM_TYPES
 	};
 
-	TBiquadFilter() {
+	TBiquadFilter_XSIMD() {
 		setParameters(LOWPASS, 0.f, 0.f, 1.f);
 	}
 
@@ -122,100 +98,12 @@ struct TBiquadFilter : IIRFilter<3, T> {
 				this->a[1] = 2.f * (K * K - 1.f) * norm;
 				this->a[2] = (1.f - K / Q + K * K) * norm;
 			} break;
-
-			case HIGHPASS: {
-				float norm = 1.f / (1.f + K / Q + K * K);
-				this->b[0] = norm;
-				this->b[1] = -2.f * this->b[0];
-				this->b[2] = this->b[0];
-				this->a[1] = 2.f * (K * K - 1.f) * norm;
-				this->a[2] = (1.f - K / Q + K * K) * norm;
-
-			} break;
-
-			case LOWSHELF: {
-				float sqrtV = std::sqrt(V);
-				if (V >= 1.f) {
-					float norm = 1.f / (1.f + M_SQRT2 * K + K * K);
-					this->b[0] = (1.f + M_SQRT2 * sqrtV * K + V * K * K) * norm;
-					this->b[1] = 2.f * (V * K * K - 1.f) * norm;
-					this->b[2] = (1.f - M_SQRT2 * sqrtV * K + V * K * K) * norm;
-					this->a[1] = 2.f * (K * K - 1.f) * norm;
-					this->a[2] = (1.f - M_SQRT2 * K + K * K) * norm;
-				}
-				else {
-					float norm = 1.f / (1.f + M_SQRT2 / sqrtV * K + K * K / V);
-					this->b[0] = (1.f + M_SQRT2 * K + K * K) * norm;
-					this->b[1] = 2.f * (K * K - 1) * norm;
-					this->b[2] = (1.f - M_SQRT2 * K + K * K) * norm;
-					this->a[1] = 2.f * (K * K / V - 1.f) * norm;
-					this->a[2] = (1.f - M_SQRT2 / sqrtV * K + K * K / V) * norm;
-				}
-			} break;
-
-			case HIGHSHELF: {
-				float sqrtV = std::sqrt(V);
-				if (V >= 1.f) {
-					float norm = 1.f / (1.f + M_SQRT2 * K + K * K);
-					this->b[0] = (V + M_SQRT2 * sqrtV * K + K * K) * norm;
-					this->b[1] = 2.f * (K * K - V) * norm;
-					this->b[2] = (V - M_SQRT2 * sqrtV * K + K * K) * norm;
-					this->a[1] = 2.f * (K * K - 1.f) * norm;
-					this->a[2] = (1.f - M_SQRT2 * K + K * K) * norm;
-				}
-				else {
-					float norm = 1.f / (1.f / V + M_SQRT2 / sqrtV * K + K * K);
-					this->b[0] = (1.f + M_SQRT2 * K + K * K) * norm;
-					this->b[1] = 2.f * (K * K - 1.f) * norm;
-					this->b[2] = (1.f - M_SQRT2 * K + K * K) * norm;
-					this->a[1] = 2.f * (K * K - 1.f / V) * norm;
-					this->a[2] = (1.f / V - M_SQRT2 / sqrtV * K + K * K) * norm;
-				}
-			} break;
-
-			case BANDPASS: {
-				float norm = 1.f / (1.f + K / Q + K * K);
-				this->b[0] = K / Q * norm;
-				this->b[1] = 0.f;
-				this->b[2] = -this->b[0];
-				this->a[1] = 2.f * (K * K - 1.f) * norm;
-				this->a[2] = (1.f - K / Q + K * K) * norm;
-			} break;
-
-			case PEAK: {
-				float c = 1.0f / K;
-				float phi = c * c;
-				float Knum = c / Q;
-				float Kdenom = Knum;
-
-				if (V > 1.0f)
-					Knum *= V;
-				else
-					Kdenom /= V;
-
-				float norm = phi + Kdenom + 1.0;
-				this->b[0] = (phi + Knum + 1.0f) / norm;
-				this->b[1] = 2.0f * (1.0f - phi) / norm;
-				this->b[2] = (phi - Knum + 1.0f) / norm;
-				this->a[1] = 2.0f * (1.0f - phi) / norm;
-				this->a[2] = (phi - Kdenom + 1.0f) / norm;
-			} break;
-
-			case NOTCH: {
-				float norm = 1.f / (1.f + K / Q + K * K);
-				this->b[0] = (1.f + K * K) * norm;
-				this->b[1] = 2.f * (K * K - 1.f) * norm;
-				this->b[2] = this->b[0];
-				this->a[1] = this->b[1];
-				this->a[2] = (1.f - K / Q + K * K) * norm;
-			} break;
-
 			default: break;
 		}
 	}
 };
 
-typedef TBiquadFilter<> BiquadFilter;
+typedef TBiquadFilter_XSIMD<> BiquadFilter_XSIMD;
 
 
 /**
@@ -223,12 +111,12 @@ typedef TBiquadFilter<> BiquadFilter;
     The template parameter N should be 1/2 the desired filter order.
 
     Currently uses an 2*N-th order Butterworth filter.
-    source: https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/AAFilter.hpp
+    source: https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/AAFilter_XSIMD.hpp
 */
-template<int N, typename T>
-class AAFilter {
+template<int N, typename T = xsimd::batch<float>>
+class AAFilter_XSIMD {
 public:
-	AAFilter() = default;
+	AAFilter_XSIMD() = default;
 
 	/** Calculate Q values for a Butterworth filter of a given order */
 	static std::vector<float> calculateButterQs(int order) {
@@ -236,7 +124,7 @@ public:
 		std::vector<float> Qs;
 
 		for (int k = 1; k <= lim; ++k) {
-			auto b = -2.0f * std::cos((2.0f * k + order - 1) * 3.14159 / (2.0f * order));
+			auto b = -2.0f * simd::cos((2.0f * k + order - 1) * 3.14159 / (2.0f * order));
 			Qs.push_back(1.0f / b);
 		}
 
@@ -247,15 +135,15 @@ public:
 	/**
 	 * Resets the filter to process at a new sample rate.
 	 *
-	 * @param sampleRate: The base (i.e. pre-oversampling) sample rate of the audio being processed
-	 * @param osRatio: The oversampling ratio at which the filter is being used
+	 * @param sampleRate: The base (i.e. pre-oversampling_XSIMD) sample rate of the audio being processed
+	 * @param osRatio: The oversampling_XSIMD ratio at which the filter is being used
 	 */
 	void reset(float sampleRate, int osRatio) {
 		float fc = 0.85f * (sampleRate / 2.0f);
 		auto Qs = calculateButterQs(2 * N);
 
 		for (int i = 0; i < N; ++i)
-			filters[i].setParameters(TBiquadFilter<T>::Type::LOWPASS, fc / (osRatio * sampleRate), Qs[i], 1.0f);
+			filters[i].setParameters(TBiquadFilter_XSIMD<T>::Type::LOWPASS, fc / (osRatio * sampleRate), Qs[i], 1.0f);
 	}
 
 	inline T process(T x) noexcept {
@@ -266,20 +154,20 @@ public:
 	}
 
 private:
-	TBiquadFilter<T> filters[N];
+	TBiquadFilter_XSIMD<T> filters[N];
 };
 
 
 
 /**
- * Base class for oversampling of any order
- * source: https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/oversampling.hpp
+ * Base class for oversampling_XSIMD of any order
+ * source: https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/oversampling_XSIMD.hpp
  */
-template<typename T>
-class BaseOversampling {
+template<typename T = xsimd::batch<float>>
+class BaseOversampling_XSIMD {
 public:
-	BaseOversampling() = default;
-	virtual ~BaseOversampling() {}
+	BaseOversampling_XSIMD() = default;
+	virtual ~BaseOversampling_XSIMD() {}
 
 	/** Resets the oversampler for processing at some base sample rate */
 	virtual void reset(float /*baseSampleRate*/) = 0;
@@ -307,21 +195,21 @@ public:
     float y = oversample.downsample();
     @endcode
 */
-template<int ratio, int filtN = 4, typename T = float>
-class Oversampling : public BaseOversampling<T> {
+template<int ratio, int filtN = 4, typename T = xsimd::batch<float>>
+class Oversampling_XSIMD : public BaseOversampling_XSIMD<T> {
 public:
-	Oversampling() = default;
-	virtual ~Oversampling() {}
+	Oversampling_XSIMD() = default;
+	virtual ~Oversampling_XSIMD() {}
 
 	void reset(float baseSampleRate) override {
-		aaFilter.reset(baseSampleRate, ratio);
+		aaFilter_XSIMD.reset(baseSampleRate, ratio);
 		aiFilter.reset(baseSampleRate, ratio);
 		std::fill(osBuffer, &osBuffer[ratio], 0.0f);
 	}
 
 	inline void upsample(T x) noexcept override {
 		osBuffer[0] = ratio * x;
-		std::fill(&osBuffer[1], &osBuffer[ratio], 0.0f); // TODO: XSIMD
+		std::fill(&osBuffer[1], &osBuffer[ratio], 0.0f);
 
 		for (int k = 0; k < ratio; k++)
 			osBuffer[k] = aiFilter.process(osBuffer[k]);
@@ -330,7 +218,7 @@ public:
 	inline T downsample() noexcept override {
 		T y = 0.0f;
 		for (int k = 0; k < ratio; k++)
-			y = aaFilter.process(osBuffer[k]);
+			y = aaFilter_XSIMD.process(osBuffer[k]);
 
 		return y;
 	}
@@ -342,18 +230,17 @@ public:
 	T osBuffer[ratio];
 
 private:
-	AAFilter<filtN, T> aaFilter; // anti-aliasing filter
-	AAFilter<filtN, T> aiFilter; // anti-imaging filter
+	AAFilter_XSIMD<filtN, T> aaFilter_XSIMD; // anti-aliasing filter
+	AAFilter_XSIMD<filtN, T> aiFilter; // anti-imaging filter
 };
 
-//typedef Oversampling<1, 4, simd::float_4> OversamplingSIMD;
-typedef Oversampling<1, 4, xsimd::batch<float>> OversamplingSIMD;
+//typedef Oversampling_XSIMD<1, 4, simd::float_4> Oversampling_XSIMDSIMD;
 
 
 /**
     Class to implement an oversampled process, with variable
-    oversampling factor. To use, create an object, set the oversampling
-    factor using `setOversamplingindex()` and prepare using `reset()`.
+    oversampling_XSIMD factor. To use, create an object, set the oversampling_XSIMD
+    factor using `setOversampling_XSIMDindex()` and prepare using `reset()`.
 
     Then use the following code to process samples:
     @code
@@ -364,12 +251,12 @@ typedef Oversampling<1, 4, xsimd::batch<float>> OversamplingSIMD;
     float y = oversample.downsample();
     @endcode
 
-	source (modified): https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/VariableOversampling.hpp
+	source (modified): https://github.com/jatinchowdhury18/ChowDSP-VCV/blob/master/src/shared/VariableOversampling_XSIMD.hpp
 */
-template<int filtN = 4, typename T = float>
-class VariableOversampling {
+template<int filtN = 4, typename T = xsimd::batch<float>>
+class VariableOversampling_XSIMD {
 public:
-	VariableOversampling() = default;
+	VariableOversampling_XSIMD() = default;
 
 	/** Prepare the oversampler to process audio at a given sample rate */
 	void reset(float sampleRate) {
@@ -377,12 +264,12 @@ public:
 			os->reset(sampleRate);
 	}
 
-	/** Sets the oversampling factor as 2^idx */
+	/** Sets the oversampling_XSIMD factor as 2^idx */
 	void setOversamplingIndex(int newIdx) {
 		osIdx = newIdx;
 	}
 
-	/** Returns the oversampling index */
+	/** Returns the oversampling_XSIMD index */
 	int getOversamplingIndex() const noexcept {
 		return osIdx;
 	}
@@ -402,7 +289,7 @@ public:
 		return oss[osIdx]->getOSBuffer();
 	}
 
-	/** Returns the current oversampling factor */
+	/** Returns the current oversampling_XSIMD factor */
 	int getOversamplingRatio() const noexcept {
 		return 1 << osIdx;
 	}
@@ -410,17 +297,17 @@ public:
 
 private:
 	enum {
-		NumOS = 5, // number of oversampling options
+		NumOS = 5, // number of oversampling_XSIMD options
 	};
 
 	int osIdx = 0;
 
-	Oversampling < 1 << 0, filtN, T > os0; // 1x
-	Oversampling < 1 << 1, filtN, T > os1; // 2x
-	Oversampling < 1 << 2, filtN, T > os2; // 4x
-	Oversampling < 1 << 3, filtN, T > os3; // 8x
-	Oversampling < 1 << 4, filtN, T > os4; // 16x
-	BaseOversampling<T>* oss[NumOS] = { &os0, &os1, &os2, &os3, &os4 };
+	Oversampling_XSIMD < 1 << 0, filtN, T > os0; // 1x
+	Oversampling_XSIMD < 1 << 1, filtN, T > os1; // 2x
+	Oversampling_XSIMD < 1 << 2, filtN, T > os2; // 4x
+	Oversampling_XSIMD < 1 << 3, filtN, T > os3; // 8x
+	Oversampling_XSIMD < 1 << 4, filtN, T > os4; // 16x
+	BaseOversampling_XSIMD<T>* oss[NumOS] = { &os0, &os1, &os2, &os3, &os4 };
 };
 
 } // namespace chowdsp
