@@ -36,11 +36,11 @@ struct M102XSIMD : Module {
 
 	M102XSIMD() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(INPUT_PARAM, 0.f, 10.f, 0.5f, "Input Gain Multiplier");
+		configParam(INPUT_PARAM, 0.f, 10.f, 1.f, "Input Gain Multiplier");
 		configParam(OFFSET_PARAM, -10.f, 10.f, 0.f, "Voltage Offset", " V");
-		configParam(OUTPUT_PARAM, 0.f, 4.f, 2.f, "Output Gain Multiplier");
+		configParam(OUTPUT_PARAM, 0.f, 2.f, 1.f, "Output Gain Multiplier");
 			paramQuantities[OUTPUT_PARAM]->randomizeEnabled = false;
-		configParam(CV1_PARAM, 0.f, 1.f, 1.f, "CV1 Attenuator", "", 0.f, 10.f);
+		configParam(CV1_PARAM, -1.f, 1.f, 0.f, "CV1 Attenuator", "", 0.f, 5.f);
 		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter", "", 0.f, 5.f);
 
 		const float minFreqHz = 16.0f;
@@ -52,7 +52,7 @@ struct M102XSIMD : Module {
 		configParam(CUTOFF_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 10.f/(maxFreq-minFreq), -minFreq * (10.f/(maxFreq-minFreq)) );
 
 		configInput(INPUT_INPUT, "Input");
-		configSwitch(RANGE_PARAM,1.f, 3.f, 1.f, "Gain Control Multiplier", {"x1", "x2", "x3"});
+		configSwitch(RANGE_PARAM, 1.f, 3.f, 1.f, "Gain Control Multiplier", {"x1", "x2", "x3"});
 			paramQuantities[RANGE_PARAM]->snapEnabled = true;
 
 
@@ -60,6 +60,7 @@ struct M102XSIMD : Module {
 		configInput(CV2_INPUT, "");
 
 		configOutput(OUTPUT_OUTPUT, "Output");
+		configBypass(INPUT_INPUT, OUTPUT_OUTPUT);
 
 		onSampleRateChange();
 	}
@@ -138,25 +139,23 @@ struct M102XSIMD : Module {
     {
 		static const int batch_size = xsimd::batch<float>::size;
 		range_param = params[RANGE_PARAM].getValue();
-		input_param = params[INPUT_PARAM].getValue();
+		input_param = params[INPUT_PARAM].getValue() * 0.5f;
 		input_param *= range_param;
 
 		if (inputs[CV2_INPUT].isConnected())
 		{
 			input_cv_param_2 = params[CV2_PARAM].getValue();
-			input_cv_2 = input_cv_param_2 * inputs[CV2_INPUT].getVoltage();
-			input_param += input_cv_2;
+			//input_cv_2 = input_cv_param_2 * (inputs[CV2_INPUT].getVoltage() * 0.1f);
+			input_param += (inputs[CV2_INPUT].getVoltage() * input_cv_param_2 * 0.5f);
 		}
 
 		if (inputs[CV1_INPUT].isConnected())
 		{
-			input_cv_param = params[CV1_PARAM].getValue() * 0.1f;
-			input_cv = input_cv_param * (inputs[CV1_INPUT].getVoltage());
-			input_param *= input_cv;
+			input_param *= std::max(inputs[CV1_INPUT].getVoltage() * 0.1f, 0.f);
 		}
 
-		output_param = params[OUTPUT_PARAM].getValue();
-		offset_param = params[OFFSET_PARAM].getValue() / 10.f;
+		output_param = params[OUTPUT_PARAM].getValue() * 2.f;
+		offset_param = params[OFFSET_PARAM].getValue() * 0.2f;
 
 		cutoff = params[CUTOFF_PARAM].getValue();
 		cutoff = cutoff * 10.f - 5.f;
@@ -172,7 +171,7 @@ struct M102XSIMD : Module {
 		for (int x = 0; x < channels; x += batch_size)
 		{
 			int batch_index = x / batch_size;
-       		input_batch[batch_index] = xsimd::load_unaligned(&voltage_ptr[x]);
+       		input_batch[batch_index] = xsimd::load_aligned(&voltage_ptr[x]);
        		input_batch[batch_index] *= 0.2f;
 
 			diode_clipper[batch_index].setCircuitParams(input_param, offset_param, cutoff);
@@ -182,7 +181,7 @@ struct M102XSIMD : Module {
 			for (int i = 0; i < oversamplingRatio; ++i)
 			{
 				osBuffer[i] = diode_clipper[batch_index].processSample(input_batch[batch_index]);
-				osBuffer[i] += offset_param * 0.5f;
+				//osBuffer[i] += offset_param * 0.5f;
 			}
 			//END OVERSAMPLING LOOP
 			//DOWNSAMPLE
@@ -192,18 +191,22 @@ struct M102XSIMD : Module {
 				input_batch[batch_index] = dc_blocker[batch_index].process(input_batch[batch_index], (float)1.f);
 			}
 			//input_batch[batch_index].store_aligned(&output_array[x]);
-			input_batch[batch_index].store_unaligned(&output_array[x]);
+			input_batch[batch_index].store_aligned(&output_array[x]);
+
+			float batch_max = xsimd::reduce_max(xsimd::abs(input_batch[batch_index]));
+			maxAbsValue = std::max(maxAbsValue, batch_max);
 			
 		}
 
 		for (int o = 0; o < channels; ++o)
         {
             outputs[OUTPUT_OUTPUT].setVoltage(-output_array[o], o);
-			maxAbsValue = std::max(maxAbsValue, std::fabs(output_array[o]));
+			//maxAbsValue = std::max(maxAbsValue, std::fabs(output_array[o]));
         }
 
         outputs[OUTPUT_OUTPUT].setChannels(channels);
 
+		
 		gate_length = 0.1f;
 		if (maxAbsValue >= 10.f)
 		{gateGenerator.trigger(gate_length);}
