@@ -73,7 +73,7 @@ struct M102XSIMD : Module {
 
 	// INPUTS+p
 	//float input[channels] = {0.f};
-	//float input_param{1.f};
+	float input_param{1.f};
 	float range_param{1.f};
 	float input_cv{0.f}; float input_cv_param{0.f};
 	float input_cv_2{0.f}; float input_cv_param_2{0.f};
@@ -146,19 +146,19 @@ struct M102XSIMD : Module {
 		input_param = params[INPUT_PARAM].getValue();
 		input_param *= range_param;
 
-		if (inputs[CV2_INPUT].isConnected())
-		{
-			input_cv_param_2 = params[CV2_PARAM].getValue();
-			input_cv_2 = input_cv_param_2 * inputs[CV2_INPUT].getVoltage();
-			input_param += input_cv_2;
-		}
+		//if (inputs[CV2_INPUT].isConnected())
+		//{
+		//	input_cv_param_2 = params[CV2_PARAM].getValue();
+		//	input_cv_2 = input_cv_param_2 * inputs[CV2_INPUT].getVoltage();
+		//	input_param += input_cv_2;
+		//}
 
-		if (inputs[CV1_INPUT].isConnected())
-		{
-			input_cv_param = params[CV1_PARAM].getValue() * 0.1f;
-			input_cv = input_cv_param * (inputs[CV1_INPUT].getVoltage());
-			input_param *= input_cv;
-		}
+		//if (inputs[CV1_INPUT].isConnected())
+		//{
+		//	input_cv_param = params[CV1_PARAM].getValue() * 0.1f;
+		//	input_cv = input_cv_param * (inputs[CV1_INPUT].getVoltage());
+		//	input_param *= input_cv;
+		//}
 
 		output_param = params[OUTPUT_PARAM].getValue() * 2.f;
 		offset_param = params[OFFSET_PARAM].getValue() * 0.2f;
@@ -174,13 +174,13 @@ struct M102XSIMD : Module {
         const int channels = inputs[INPUT_INPUT].getChannels();
 
 		float* input_voltage_ptr = inputs[INPUT_INPUT].getVoltages();
-		float* cv_voltage_ptr = inputs[CV1_INPUT].getVoltages();
-		float* cv_2_voltage_ptr = inputs[CV2_INPUT].getVoltages();
+		//float* cv_voltage_ptr = inputs[CV1_INPUT].getVoltages();
+		//float* cv_2_voltage_ptr = inputs[CV2_INPUT].getVoltages();
 
 		for (int x = 0; x < channels; x += batch_size)
 		{
 			int batch_index = x / batch_size;
-       		input_batch[batch_index] = xsimd::load_unaligned(&voltage_ptr[x]);
+       		input_batch[batch_index] = xsimd::load_unaligned(&input_voltage_ptr[x]);
        		input_batch[batch_index] *= 0.2f;
 
 			diode_clipper[batch_index].setCircuitParams(input_param_batch[batch_index], offset_param, cutoff);
