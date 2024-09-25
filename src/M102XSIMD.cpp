@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "chowdsp/ChowDSP_XSIMD.hpp"
+#include "chowdsp/ChowDSP.hpp"
 #include "dsp/dc_blocker.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
 
@@ -31,7 +31,7 @@ struct M102XSIMD : Module {
 		LIGHTS_LEN
 	};
 
-	chowdsp::VariableOversampling_XSIMD<6, b_float> oversample[8];	// uses a 2*6=12th order Butterworth filter
+	chowdsp::VariableOversampling<6, b_float> oversample[4];	// uses a 2*6=12th order Butterworth filter
 	int oversamplingIndex = 1;
 
 	M102XSIMD() {
@@ -66,11 +66,15 @@ struct M102XSIMD : Module {
 	}
 
 	xsimd::batch<float> input_batch[4] = {0.f};
+	xsimd::batch<float> input_param_batch[4] = {0.f};
+	xsimd::batch<float> cv_batch[4] = {0.f};
+	xsimd::batch<float> cv_2_batch[4] = {0.f};
 	float output_array[16] = {0.f};
 
 	// INPUTS+p
 	//float input[channels] = {0.f};
-	float input_param{1.f}; float range_param{1.f};
+	//float input_param{1.f};
+	float range_param{1.f};
 	float input_cv{0.f}; float input_cv_param{0.f};
 	float input_cv_2{0.f}; float input_cv_param_2{0.f};
 
@@ -139,19 +143,21 @@ struct M102XSIMD : Module {
     {
 		static const int batch_size = xsimd::batch<float>::size;
 		range_param = params[RANGE_PARAM].getValue();
-		input_param = params[INPUT_PARAM].getValue() * 0.5f;
+		input_param = params[INPUT_PARAM].getValue();
 		input_param *= range_param;
 
 		if (inputs[CV2_INPUT].isConnected())
 		{
 			input_cv_param_2 = params[CV2_PARAM].getValue();
-			//input_cv_2 = input_cv_param_2 * (inputs[CV2_INPUT].getVoltage() * 0.1f);
-			input_param += (inputs[CV2_INPUT].getVoltage() * input_cv_param_2 * 0.5f);
+			input_cv_2 = input_cv_param_2 * inputs[CV2_INPUT].getVoltage();
+			input_param += input_cv_2;
 		}
 
 		if (inputs[CV1_INPUT].isConnected())
 		{
-			input_param *= std::max(inputs[CV1_INPUT].getVoltage() * 0.1f, 0.f);
+			input_cv_param = params[CV1_PARAM].getValue() * 0.1f;
+			input_cv = input_cv_param * (inputs[CV1_INPUT].getVoltage());
+			input_param *= input_cv;
 		}
 
 		output_param = params[OUTPUT_PARAM].getValue() * 2.f;
@@ -167,21 +173,24 @@ struct M102XSIMD : Module {
 		
         const int channels = inputs[INPUT_INPUT].getChannels();
 
-		float* voltage_ptr = inputs[INPUT_INPUT].getVoltages();
+		float* input_voltage_ptr = inputs[INPUT_INPUT].getVoltages();
+		float* cv_voltage_ptr = inputs[CV1_INPUT].getVoltages();
+		float* cv_2_voltage_ptr = inputs[CV2_INPUT].getVoltages();
+
 		for (int x = 0; x < channels; x += batch_size)
 		{
 			int batch_index = x / batch_size;
-       		input_batch[batch_index] = xsimd::load_aligned(&voltage_ptr[x]);
+       		input_batch[batch_index] = xsimd::load_unaligned(&voltage_ptr[x]);
        		input_batch[batch_index] *= 0.2f;
 
-			diode_clipper[batch_index].setCircuitParams(input_param, offset_param, cutoff);
+			diode_clipper[batch_index].setCircuitParams(input_param_batch[batch_index], offset_param, cutoff);
 			oversample[batch_index].upsample(input_batch[batch_index]);
 			//OVERSAMPLING LOOP
 			b_float* osBuffer = oversample[batch_index].getOSBuffer();
 			for (int i = 0; i < oversamplingRatio; ++i)
 			{
 				osBuffer[i] = diode_clipper[batch_index].processSample(input_batch[batch_index]);
-				//osBuffer[i] += offset_param * 0.5f;
+				osBuffer[i] += offset_param * 0.5f;
 			}
 			//END OVERSAMPLING LOOP
 			//DOWNSAMPLE
