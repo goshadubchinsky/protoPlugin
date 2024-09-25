@@ -91,7 +91,7 @@ struct M102XSIMD : Module {
 	int diode_type = 1;
 	int capacitor_type = 1;
 	DC_Blocker<b_float> dc_blocker[4];
-	bool dc_blocker_active = true;
+	bool dc_blocker_active = false;
 
 	//OTHER
 	float gate_length{0.5f};
