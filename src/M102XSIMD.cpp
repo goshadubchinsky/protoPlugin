@@ -288,24 +288,24 @@ struct M102XSIMDWidget : ModuleWidget {
 		//addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		//addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(25.4, 21.8)), module, M102XSIMD::INPUT_PARAM));
+		addParam(createParamCentered<Neutron_Knob_Small>(mm2px(Vec(25.4, 21.8)), module, M102XSIMD::INPUT_PARAM));
 		addParam(createParamCentered<ScrewKnobBlue>(mm2px(Vec(6.716, 42.75)), module, M102XSIMD::OFFSET_PARAM));
-		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(25.4, 42.75)), module, M102XSIMD::OUTPUT_PARAM));
-		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(25.4, 63.7)), module, M102XSIMD::CV1_PARAM));
-		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(25.4, 84.65)), module, M102XSIMD::CV2_PARAM));
-		addParam(createParamCentered<WhiteKnob15>(mm2px(Vec(25.4, 105.6)), module, M102XSIMD::CUTOFF_PARAM));
+		addParam(createParamCentered<WhiteKnob10>(mm2px(Vec(25.4, 42.75)), module, M102XSIMD::OUTPUT_PARAM));
+		addParam(createParamCentered<WhiteKnob10>(mm2px(Vec(25.4, 63.7)), module, M102XSIMD::CV1_PARAM));
+		addParam(createParamCentered<WhiteKnob10>(mm2px(Vec(25.4, 84.65)), module, M102XSIMD::CV2_PARAM));
+		addParam(createParamCentered<WhiteKnob10>(mm2px(Vec(25.4, 105.6)), module, M102XSIMD::CUTOFF_PARAM));
 
 		addParam(createParamCentered<BefacoSwitchVertical>(mm2px(Vec(6.716, 32.782)), module, M102XSIMD::RANGE_PARAM));
 
 		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(12.7, 42.75)), module, M102XSIMD::LIGHT_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.716, 21.8)), module, M102XSIMD::INPUT_INPUT));
-		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.716, 32.782)), module, M102XSIMD::RANGE_INPUT));
-		//addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.7, 42.75)), module, M102XSIMD::LIGHT_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.716, 63.7)), module, M102XSIMD::CV1_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.716, 84.65)), module, M102XSIMD::CV2_INPUT));
+		addInput(createInputCentered<DarkPJ301MPort>(mm2px(Vec(6.716, 21.8)), module, M102XSIMD::INPUT_INPUT));
+		//addInput(createInputCentered<DarkPJ301MPort>(mm2px(Vec(6.716, 32.782)), module, M102XSIMD::RANGE_INPUT));
+		//addInput(createInputCentered<DarkPJ301MPort>(mm2px(Vec(12.7, 42.75)), module, M102XSIMD::LIGHT_INPUT));
+		addInput(createInputCentered<DarkPJ301MPort>(mm2px(Vec(6.716, 63.7)), module, M102XSIMD::CV1_INPUT));
+		addInput(createInputCentered<DarkPJ301MPort>(mm2px(Vec(6.716, 84.65)), module, M102XSIMD::CV2_INPUT));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(6.716, 105.6)), module, M102XSIMD::OUTPUT_OUTPUT));
+		addOutput(createOutputCentered<DarkPJ301MPort>(mm2px(Vec(6.716, 105.6)), module, M102XSIMD::OUTPUT_OUTPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {
