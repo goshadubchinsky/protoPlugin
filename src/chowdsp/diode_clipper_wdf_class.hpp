@@ -44,7 +44,7 @@ public:
 
     inline T processSample(T x)
     {
-        x = applyInputGain(x) + this->offset;
+        x = applyInputGain(x+ this->offset);
 
         Vs.setVoltage(x);
         dp.incident(P1.reflected());
