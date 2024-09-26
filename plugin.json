@@ -48,6 +48,12 @@
       "name": "M102XSIMD",
       "description": "",
       "tags": []
+    },
+    {
+      "slug": "M102XSIMD2",
+      "name": "M102XSIMD2",
+      "description": "",
+      "tags": []
     }
   ]
 }

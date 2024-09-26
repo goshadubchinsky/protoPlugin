@@ -15,6 +15,8 @@ extern Model* modelPROTO6;
 extern Model* modelCEM3340;
 extern Model* modelNeutron;
 extern Model* modelKOCMOCSVF;
+extern Model* modelM102XSIMD2;
+
 
 inline float getSampleRate() noexcept {
 // in benchmarking app, sample rate is not defined    
