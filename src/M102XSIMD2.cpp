@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "shared/shared.cpp"
 #include "chowdsp/ChowDSP.hpp"
 #include "dsp/dc_blocker.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
@@ -93,68 +94,83 @@ struct M102XSIMD2 : Module {
 	bool dc_blocker_active = false;
 
 	// Safety Clipper Light
-	static const float gate_length{0.5f};
+	static constexpr float gate_length = 0.5f;
 	rack::dsp::PulseGenerator gateGenerator;
 	float maxAbsValue = 0.0f;
 
 	void process(const ProcessArgs& args) override {
 		
 		// Get XSIMD batch size
-		static const int batch_size = xsimd::batch<float>::size;
+			// Prepare the dispatcher to target AVX2 and SSE2 architectures
+		shared<float> detector;
+
+			// Define a functor (lambda) that calls the batch_size_detector
+		auto batch_size_functor = [&detector](auto arch) {
+			return detector.batch_size_detector(arch);
+		};
+
+			// Create the dispatching function, specifying the architecture list (AVX2 and SSE2)
+		auto dispatched = xsimd::dispatch<xsimd::arch_list<xsimd::avx2, xsimd::sse2>>(batch_size_functor);
+
+			// Dispatch based on runtime information (will choose AVX2 or SSE2 based on the CPU)
+		int batch_size = dispatched();
+
+		//static const int batch_size = get_batch_size();
+		outputs[AUDIO_OUTPUT].setVoltage((float)batch_size);
 
 		// Get oversampling ratio
-		const int oversamplingRatio = oversample[0].getOversamplingRatio();
-
-		// Get number of polyphony
-		const int channels = inputs[AUDIO_INPUT].getChannels();
-
-
-		// Range Switch
-		range_param = params[RANGE_PARAM].getValue();
-
-		// Params (place these in different process to call only once in channels loop)
-		input_param =	params[INPUT_PARAM].getValue();
-		range_param =	params[RANGE_PARAM].getValue();
-		output_param =	params[OUTPUT_PARAM].getValue();
-		cv2_param =		params[CV2_PARAM].getValue();
-		offset_param =	params[BIAS_PARAM].getValue();
-		tone_param =	params[TONE_PARAM].getValue();
-
-		// Inputs Pointers
-		float* audio_voltage_ptr = 		inputs[AUDIO_INPUT].getVoltages();
-		float* cv_1_voltage_ptr = 		inputs[CV1_INPUT].getVoltages();
-		float* cv_out_voltage_ptr = 	inputs[CVOUT_INPUT].getVoltages();
-		float* cv_2_voltage_ptr = 		inputs[CV2_INPUT].getVoltages();
-		float* cv_bias_voltage_ptr = 	inputs[CVBIAS_INPUT].getVoltages();
-		float* cv_tone_voltage_ptr = 	inputs[CVTONE_INPUT].getVoltages();
-
-		// Cutoff calculation (MONO)
-		if (channels == 1 || inputs[CVTONE_INPUT].getChannels() == 1)
-		{
-			tone_param += &cv_tone_voltage_ptr[0]; // ???????
-			tone_param = dsp::FREQ_C4 * dsp::exp2_taylor5(tone_param); // ???????
-			tone_param = clamp(tone_param, 1.f, getSampleRate() * oversamplingRatio * 0.5f); // ??????? // getSampleRate() * oversample[0].getOversamplingRatio()
-		}
-		
-		// Polyphony loop
-		for (int c = 0; c < channels; c += batch_size)
-		{
-			// Calculate batch_index for oversampler
-			const int batch_index = c / batch_size;
-
-			// Cutoff calculation (POLY)
-			if (channels > 1 || inputs[CVTONE_INPUT].getChannels() > 1)
-			{
-				cv_tone_input_batch[batch_index] = xsimd::load_unaligned(&cv_tone_voltage_ptr[c]);
-				cv_tone_input_batch[batch_index] += tone_param;
-				// TODO XSIMD cv_tone_input_batch[batch_index] = dsp::FREQ_C4 * dsp::exp2_taylor5(cv_tone_input_batch[batch_index]);
-				// TODO XSIMD cv_tone_input_batch[batch_index] = clamp(cv_tone_input_batch[batch_index], 1.f, getSampleRate() * oversamplingRatio * 0.5f);
-
-			}
-
-			audio_input_batch[batch_index] = xsimd::load_unaligned(&input_voltage_ptr[c]);
-       		audio_input_batch[batch_index] *= 0.2f;
-		}
+		//const int oversamplingRatio = oversample[0].getOversamplingRatio();
+		//
+		//// Get number of polyphony
+		//const int channels = inputs[AUDIO_INPUT].getChannels();
+		//
+		//
+		//// Range Switch
+		//range_param = params[RANGE_PARAM].getValue();
+		//
+		//// Params (place these in different process to call only once in channels loop)
+		//input_param =	params[INPUT_PARAM].getValue();
+		//range_param =	params[RANGE_PARAM].getValue();
+		//output_param =	params[OUTPUT_PARAM].getValue();
+		//cv2_param =		params[CV2_PARAM].getValue();
+		//offset_param =	params[BIAS_PARAM].getValue();
+		//tone_param =	params[TONE_PARAM].getValue();
+		//
+		//// Inputs Pointers
+		//float* audio_voltage_ptr = 		inputs[AUDIO_INPUT].getVoltages();
+		//float* cv_1_voltage_ptr = 		inputs[CV1_INPUT].getVoltages();
+		//float* cv_out_voltage_ptr = 	inputs[CVOUT_INPUT].getVoltages();
+		//float* cv_2_voltage_ptr = 		inputs[CV2_INPUT].getVoltages();
+		//float* cv_bias_voltage_ptr = 	inputs[CVBIAS_INPUT].getVoltages();
+		//float* cv_tone_voltage_ptr = 	inputs[CVTONE_INPUT].getVoltages();
+		//
+		//// Cutoff calculation (MONO)
+		//if (channels == 1 || inputs[CVTONE_INPUT].getChannels() == 1)
+		//{
+		//	tone_param += &cv_tone_voltage_ptr[0]; // ???????
+		//	tone_param = dsp::FREQ_C4 * dsp::exp2_taylor5(tone_param); // ???????
+		//	tone_param = clamp(tone_param, 1.f, getSampleRate() * oversamplingRatio * 0.5f); // ??????? // getSampleRate() * oversample[0].getOversamplingRatio()
+		//}
+		//
+		//// Polyphony loop
+		//for (int c = 0; c < channels; c += batch_size)
+		//{
+		//	// Calculate batch_index for oversampler
+		//	const int batch_index = c / batch_size;
+		//
+		//	// Cutoff calculation (POLY)
+		//	if (channels > 1 || inputs[CVTONE_INPUT].getChannels() > 1)
+		//	{
+		//		cv_tone_input_batch[batch_index] = xsimd::load_unaligned(&cv_tone_voltage_ptr[c]);
+		//		cv_tone_input_batch[batch_index] += tone_param;
+		//		// TODO XSIMD cv_tone_input_batch[batch_index] = dsp::FREQ_C4 * dsp::exp2_taylor5(cv_tone_input_batch[batch_index]);
+		//		// TODO XSIMD cv_tone_input_batch[batch_index] = clamp(cv_tone_input_batch[batch_index], 1.f, getSampleRate() * oversamplingRatio * 0.5f);
+		//
+		//	}
+		//
+		//	audio_input_batch[batch_index] = xsimd::load_unaligned(&input_voltage_ptr[c]);
+       	//	audio_input_batch[batch_index] *= 0.2f;
+		//}
 
 	}
 
