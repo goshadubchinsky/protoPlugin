@@ -5,6 +5,11 @@
 
 using b_float = xsimd::batch<float>;
 
+template <typename T>
+xsimd::batch<T> xsimd_clamp(const xsimd::batch<T>& value, const xsimd::batch<T>& min_val, const xsimd::batch<T>& max_val) {
+    return xsimd::max(min_val, xsimd::min(value, max_val));
+}
+
 struct M102XSIMD2 : Module {
 	enum ParamId {
 		INPUT_PARAM,
@@ -44,7 +49,7 @@ struct M102XSIMD2 : Module {
 		configParam(BIAS_PARAM, -10.f, 10.f, 0.f, "Input Offset", " V");
 
 		const float minFreqHz = 1.0f;	// ??????? 16
-		const float maxFreqHz = 22000.0f;	// ???????
+		const float maxFreqHz = 20000.0f;	// ???????
 		const float minFreq = (std::log2(minFreqHz / dsp::FREQ_C4) + 5) / 10;
 		const float maxFreq = (std::log2(maxFreqHz / dsp::FREQ_C4) + 5) / 10;
 		configParam(TONE_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 10.f/(maxFreq-minFreq), -minFreq * (10.f/(maxFreq-minFreq)) );
@@ -77,11 +82,14 @@ struct M102XSIMD2 : Module {
 	b_float cv_2_input_batch[4] = {0.f};
 	b_float cv_bias_input_batch[4] = {0.f};
 	b_float cv_tone_input_batch[4] = {0.f};
+	b_float pitch_batch[4] = {0.f};
+	b_float cutoff_batch[4] = {0.f};
+	//b_float cutoff_batch[4] = {0.f};
 	float output_array[16] = {0.f};
 
 	// OVERSAMPLING
 	chowdsp::VariableOversampling<6, b_float> oversample[4];	// uses a 2*6=12th order Butterworth filter
-	int oversamplingIndex = 1;	// default oversampling ratio x2
+	int oversamplingIndex = 0;	// default oversampling ratio x2
 
 	// Diode_WDF
 	DiodeClipper<b_float> diode_clipper[4];
@@ -93,21 +101,20 @@ struct M102XSIMD2 : Module {
 	bool dc_blocker_active = false;
 
 	// Safety Clipper Light
-	static const float gate_length{0.5f};
+	static constexpr float gate_length{0.5f};
 	rack::dsp::PulseGenerator gateGenerator;
 	float maxAbsValue = 0.0f;
 
 	void process(const ProcessArgs& args) override {
 		
 		// Get XSIMD batch size
-		static const int batch_size = xsimd::batch<float>::size;
+		static const int batch_size = 4;
 
 		// Get oversampling ratio
-		const int oversamplingRatio = oversample[0].getOversamplingRatio();
+		//const int oversamplingRatio = oversample[0].getOversamplingRatio();
 
 		// Get number of polyphony
 		const int channels = inputs[AUDIO_INPUT].getChannels();
-
 
 		// Range Switch
 		range_param = params[RANGE_PARAM].getValue();
@@ -118,62 +125,71 @@ struct M102XSIMD2 : Module {
 		output_param =	params[OUTPUT_PARAM].getValue();
 		cv2_param =		params[CV2_PARAM].getValue();
 		offset_param =	params[BIAS_PARAM].getValue();
-		tone_param =	params[TONE_PARAM].getValue();
+		tone_param =	params[TONE_PARAM].getValue() * 10.f - 5.f;
 
 		// Inputs Pointers
 		float* audio_voltage_ptr = 		inputs[AUDIO_INPUT].getVoltages();
-		float* cv_1_voltage_ptr = 		inputs[CV1_INPUT].getVoltages();
-		float* cv_out_voltage_ptr = 	inputs[CVOUT_INPUT].getVoltages();
-		float* cv_2_voltage_ptr = 		inputs[CV2_INPUT].getVoltages();
-		float* cv_bias_voltage_ptr = 	inputs[CVBIAS_INPUT].getVoltages();
+		//float* cv_1_voltage_ptr = 		inputs[CV1_INPUT].getVoltages();
+		//float* cv_out_voltage_ptr = 	inputs[CVOUT_INPUT].getVoltages();
+		//float* cv_2_voltage_ptr = 		inputs[CV2_INPUT].getVoltages();
+		//float* cv_bias_voltage_ptr = 	inputs[CVBIAS_INPUT].getVoltages();
 		float* cv_tone_voltage_ptr = 	inputs[CVTONE_INPUT].getVoltages();
 
 		// Cutoff calculation (MONO)
-		if (channels == 1 || inputs[CVTONE_INPUT].getChannels() == 1)
-		{
-			tone_param += &cv_tone_voltage_ptr[0]; // ???????
-			tone_param = dsp::FREQ_C4 * dsp::exp2_taylor5(tone_param); // ???????
-			tone_param = clamp(tone_param, 1.f, getSampleRate() * oversamplingRatio * 0.5f); // ??????? // getSampleRate() * oversample[0].getOversamplingRatio()
-		}
 		
 		// Polyphony loop
 		for (int c = 0; c < channels; c += batch_size)
 		{
 			// Calculate batch_index for oversampler
-			const int batch_index = c / batch_size;
+			static const int batch_index = c / batch_size;
+			
+			// Calculate cutoff
+			cv_tone_input_batch[batch_index] = xsimd::load_unaligned(&cv_tone_voltage_ptr[c]);
+			pitch_batch[batch_index] = tone_param + cv_tone_voltage_ptr[c];
+			//pitch_batch[batch_index] = dsp::FREQ_C4 * dsp::exp2_taylor5(pitch_batch[batch_index]);
+			cutoff_batch[batch_index] = dsp::FREQ_C4 * xsimd::exp2(pitch_batch[batch_index]);
+			//cutoff_batch[batch_index] = xsimd_clamp(cutoff_batch[batch_index], xsimd::broadcast(1.0f), xsimd::broadcast(args.sampleRate * 0.18f * oversamplingRatio));
+			//float_4 cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(pitch);
+			//// Without oversampling, we must limit to 8000 Hz or so @ 44100 Hz
+			//cutoff = clamp(cutoff, 1.f, args.sampleRate * 0.18f);
+			//filter.setCutoff(cutoff);
+			
 
-			// Cutoff calculation (POLY)
-			if (channels > 1 || inputs[CVTONE_INPUT].getChannels() > 1)
-			{
-				cv_tone_input_batch[batch_index] = xsimd::load_unaligned(&cv_tone_voltage_ptr[c]);
-				cv_tone_input_batch[batch_index] += tone_param;
-				// TODO XSIMD cv_tone_input_batch[batch_index] = dsp::FREQ_C4 * dsp::exp2_taylor5(cv_tone_input_batch[batch_index]);
-				// TODO XSIMD cv_tone_input_batch[batch_index] = clamp(cv_tone_input_batch[batch_index], 1.f, getSampleRate() * oversamplingRatio * 0.5f);
-
-			}
-
-			audio_input_batch[batch_index] = xsimd::load_unaligned(&input_voltage_ptr[c]);
+			audio_input_batch[batch_index] = xsimd::load_unaligned(&audio_voltage_ptr[c]);
+			diode_clipper[batch_index].setCircuitParams(xsimd::broadcast(input_param), xsimd::broadcast(offset_param * 0.2f), cutoff_batch[batch_index]);
        		audio_input_batch[batch_index] *= 0.2f;
+			audio_input_batch[batch_index] = diode_clipper[batch_index].processSample(audio_input_batch[batch_index]);
+			audio_input_batch[batch_index].store_aligned(&output_array[c]);
+			
 		}
+
+		for (int o = 0; o < channels; ++o)
+        {
+            outputs[AUDIO_OUTPUT].setVoltage(-output_array[o], o);
+        }
+
+		outputs[AUDIO_OUTPUT].setChannels(channels);
 
 	}
 
 	void onSampleRateChange() override {
 		float newSampleRate = getSampleRate();
-		static const int batch_size = xsimd::batch<float>::size;
+		static const int batch_size = 4;
+		
 
 		for (int c = 0; c < batch_size; c++) {
-			oversample[c].setOversamplingIndex(oversamplingIndex);
-			oversample[c].reset(newSampleRate);
+			static const int batch_index = c / batch_size;
+			oversample[batch_index].setOversamplingIndex(oversamplingIndex);
+			oversample[batch_index].reset(newSampleRate);
 
-			diode_clipper[c].setDiodeType(diode_type);
-			diode_clipper[c].setCapacitorType(capacitor_type);
-			diode_clipper[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
-			diode_clipper[c].reset();
+			diode_clipper[batch_index].setDiodeType(diode_type);
+			diode_clipper[batch_index].setCapacitorType(capacitor_type);
+			diode_clipper[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+			diode_clipper[batch_index].reset();
 
 			if (dc_blocker_active)
 			{
-				dc_blocker[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+				dc_blocker[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			}
 		}
 	}
@@ -182,21 +198,22 @@ struct M102XSIMD2 : Module {
         Module::onReset();
 
 		float newSampleRate = getSampleRate();
-		static const int batch_size = xsimd::batch<float>::size;
+		static const int batch_size = 4;
 
-		for (int c = 0; c < batch_size; ++c)
+		for (int c = 0; c < batch_size; c++)
 		{
-			oversample[c].setOversamplingIndex(oversamplingIndex);
-			oversample[c].reset(newSampleRate);
+			static const int batch_index = c / batch_size;
+			oversample[batch_index].setOversamplingIndex(oversamplingIndex);
+			oversample[batch_index].reset(newSampleRate);
 
-			diode_clipper[c].setDiodeType(diode_type);
-			diode_clipper[c].setCapacitorType(capacitor_type);
-			diode_clipper[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
-			diode_clipper[c].reset();
+			diode_clipper[batch_index].setDiodeType(diode_type);
+			diode_clipper[batch_index].setCapacitorType(capacitor_type);
+			diode_clipper[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+			diode_clipper[batch_index].reset();
 
 			if (dc_blocker_active)
 			{
-				dc_blocker[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+				dc_blocker[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			}
 		}
     }
