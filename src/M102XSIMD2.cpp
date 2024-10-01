@@ -48,11 +48,7 @@ struct M102XSIMD2 : Module {
 		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter", "%", 0.f, 100.f, 0.f);
 		configParam(BIAS_PARAM, -10.f, 10.f, 0.f, "Input Offset", " V");
 
-		const float minFreqHz = 1.0f;	// ??????? 16
-		const float maxFreqHz = 20000.0f;	// ???????
-		const float minFreq = (std::log2(minFreqHz / dsp::FREQ_C4) + 5) / 10;
-		const float maxFreq = (std::log2(maxFreqHz / dsp::FREQ_C4) + 5) / 10;
-		configParam(TONE_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 10.f/(maxFreq-minFreq), -minFreq * (10.f/(maxFreq-minFreq)) );
+		configParam(TONE_PARAM, 0.f, 1.f, 1.f, "Cutoff frequency", " ", 0.f, 10.f);
 
 		configInput(CV1_INPUT, "CV1");
 		configInput(CVOUT_INPUT, "CV Out");
@@ -111,7 +107,7 @@ struct M102XSIMD2 : Module {
 		static const int batch_size = 4;
 
 		// Get oversampling ratio
-		//const int oversamplingRatio = oversample[0].getOversamplingRatio();
+		const int oversamplingRatio = oversample[0].getOversamplingRatio();
 
 		// Get number of polyphony
 		const int channels = inputs[AUDIO_INPUT].getChannels();
@@ -124,8 +120,8 @@ struct M102XSIMD2 : Module {
 		range_param =	params[RANGE_PARAM].getValue();
 		output_param =	params[OUTPUT_PARAM].getValue();
 		cv2_param =		params[CV2_PARAM].getValue();
-		offset_param =	params[BIAS_PARAM].getValue();
-		tone_param =	params[TONE_PARAM].getValue() * 10.f - 5.f;
+		offset_param =	params[BIAS_PARAM].getValue() * 0.1f;
+		tone_param =	params[TONE_PARAM].getValue();
 
 		// Inputs Pointers
 		float* audio_voltage_ptr = 		inputs[AUDIO_INPUT].getVoltages();
@@ -145,20 +141,26 @@ struct M102XSIMD2 : Module {
 			
 			// Calculate cutoff
 			cv_tone_input_batch[batch_index] = xsimd::load_unaligned(&cv_tone_voltage_ptr[c]);
-			pitch_batch[batch_index] = tone_param + cv_tone_voltage_ptr[c];
-			//pitch_batch[batch_index] = dsp::FREQ_C4 * dsp::exp2_taylor5(pitch_batch[batch_index]);
-			cutoff_batch[batch_index] = dsp::FREQ_C4 * xsimd::exp2(pitch_batch[batch_index]);
-			//cutoff_batch[batch_index] = xsimd_clamp(cutoff_batch[batch_index], xsimd::broadcast(1.0f), xsimd::broadcast(args.sampleRate * 0.18f * oversamplingRatio));
-			//float_4 cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(pitch);
-			//// Without oversampling, we must limit to 8000 Hz or so @ 44100 Hz
-			//cutoff = clamp(cutoff, 1.f, args.sampleRate * 0.18f);
-			//filter.setCutoff(cutoff);
-			
+			cutoff_batch[batch_index] = tone_param + cv_tone_input_batch[batch_index] * 0.2f;
+			cutoff_batch[batch_index] = 20.f * xsimd::pow(xsimd::broadcast(20000.f / 20.f), cutoff_batch[batch_index]);
+
+			20 + 
+
+			cutoff_batch[batch_index] = xsimd_clamp(cutoff_batch[batch_index], xsimd::broadcast(20.f), xsimd::broadcast(20000.f));
 
 			audio_input_batch[batch_index] = xsimd::load_unaligned(&audio_voltage_ptr[c]);
-			diode_clipper[batch_index].setCircuitParams(xsimd::broadcast(input_param), xsimd::broadcast(offset_param * 0.2f), cutoff_batch[batch_index]);
+			diode_clipper[batch_index].setCircuitParams(xsimd::broadcast(input_param), xsimd::broadcast(offset_param), cutoff_batch[batch_index]);
        		audio_input_batch[batch_index] *= 0.2f;
-			audio_input_batch[batch_index] = diode_clipper[batch_index].processSample(audio_input_batch[batch_index]);
+
+			oversample[batch_index].upsample(audio_input_batch[batch_index]);
+			b_float* osBuffer = oversample[batch_index].getOSBuffer();
+			for (int i = 0; i < oversamplingRatio; ++i)
+			{
+				osBuffer[i] = diode_clipper[batch_index].processSample(osBuffer[i]);
+				osBuffer[i] += offset_param * 0.5f;
+			}
+
+			audio_input_batch[batch_index] = 5.f * output_param * oversample[batch_index].downsample();
 			audio_input_batch[batch_index].store_aligned(&output_array[c]);
 			
 		}
@@ -247,6 +249,50 @@ struct M102XSIMD2Widget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(28.56, 114.0)), module, M102XSIMD2::AUDIO_OUTPUT));
 
 		addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec(14.75, 40.75)), module, M102XSIMD2::LIGHT_LIGHT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		M102XSIMD2* module = dynamic_cast<M102XSIMD2*>(this->module);
+		assert(module);
+
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(createIndexSubmenuItem("Diode Type",{"GZ34", "1N4148", "1N4007", "BAT46", "Zener"},
+		[ = ]()
+		{
+			return module->diode_type;
+		},
+		[ = ](int mode)
+		{
+			module->diode_type = mode;
+			module->onSampleRateChange();
+		}));
+
+		menu->addChild(createIndexSubmenuItem("Capacitor Type",{"47 nF - Ceramic", "100 nF - Ceramic", "10 µF - Film", "22 µF - Tantalum"},
+		[ = ]()
+		{
+			return module->capacitor_type;
+		},
+		[ = ](int mode)
+		{
+			module->capacitor_type = mode;
+			module->onSampleRateChange();
+		}));
+		
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(createIndexSubmenuItem("Oversampling",{"Off", "x2", "x4", "x8"},
+		[ = ]()
+		{
+			return module->oversamplingIndex;
+		},
+		[ = ](int mode)
+		{
+			module->oversamplingIndex = mode;
+			module->onSampleRateChange();
+		}));
+
+		//menu->addChild(createBoolPtrMenuItem("DC Blocker", "", &module->dc_blocker_active));
 	}
 };
 
