@@ -10,7 +10,7 @@ extern Plugin* pluginInstance;
 // Declare each Model, defined in each module source file
 // extern Model* modelMyModule;
 extern Model* modelM102;
-extern Model* modelM102XSIMD;
+//extern Model* modelM102XSIMD;
 extern Model* modelPROTO6;
 extern Model* modelCEM3340;
 extern Model* modelNeutron;
@@ -19,12 +19,9 @@ extern Model* modelM102XSIMD2;
 
 
 inline float getSampleRate() noexcept {
-// in benchmarking app, sample rate is not defined    
-#ifndef CHOWDSP_BENCH
+// in benchmarking app, sample rate is not defined
     return APP->engine->getSampleRate();
-#else
-    return 48000.0f;
-#endif
+
 }
 
 

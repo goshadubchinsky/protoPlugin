@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include <xsimd/xsimd.hpp>
 #include "chowdsp/ChowDSP.hpp"
 #include "dsp/dc_blocker.hpp"
 #include "chowdsp/diode_clipper_wdf_class.hpp"
@@ -40,15 +41,23 @@ struct M102XSIMD2 : Module {
 
 	M102XSIMD2() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam(INPUT_PARAM, 0.f, 10.f, 1.f, "Input Gain");
+		configParam(INPUT_PARAM, 0.f, 10.f, 0.5f, "Input Gain");
 		configSwitch(RANGE_PARAM, 1.f, 3.f, 1.f, "Input Gain Multiplier", {"x1", "x2", "x3"});
 			paramQuantities[RANGE_PARAM]->snapEnabled = true;
-		configParam(OUTPUT_PARAM, 0.f, 4.f, 1.f, "Output Gain", "", 0.f, 2.5f);
+		configParam(OUTPUT_PARAM, 0.f, 4.f, 2.f, "Output Gain", "", 0.f, 2.5f);
 			paramQuantities[OUTPUT_PARAM]->randomizeEnabled = false;
 		configParam(CV2_PARAM, -1.f, 1.f, 0.f, "CV2 Attenuverter", "%", 0.f, 100.f, 0.f);
-		configParam(BIAS_PARAM, -10.f, 10.f, 0.f, "Input Offset", " V");
+		configParam(BIAS_PARAM, -5.f, 5.f, 0.f, "Input Offset", " V");
 
-		configParam(TONE_PARAM, 0.f, 1.f, 1.f, "Cutoff frequency", " ", 0.f, 10.f);
+	//	configParam(TONE_PARAM, 0.f, 1.f, 1.f, "Cutoff frequency", " ", 0.f, 10.f);
+
+		const float minFreqHz = 20.0f;
+		const float maxFreqHz = 20000.0f;
+		//const float defaultFreqHz = 1000.0f;
+		const float minFreq = (std::log2(minFreqHz / dsp::FREQ_C4) + 5) / 10;
+		const float maxFreq = (std::log2(maxFreqHz / dsp::FREQ_C4) + 5) / 10;
+		//const float defaultFreq = (std::log2(defaultFreqHz / dsp::FREQ_C4) + 5) / 10;
+		configParam(TONE_PARAM, minFreq, maxFreq, maxFreq, "Cutoff frequency", " ", 0.f, 10.f/(maxFreq-minFreq), -minFreq * (10.f/(maxFreq-minFreq)) );
 
 		configInput(CV1_INPUT, "CV1");
 		configInput(CVOUT_INPUT, "CV Out");
@@ -64,22 +73,17 @@ struct M102XSIMD2 : Module {
 	}
 
 	// params
-	float input_param = {0.f};
-	float range_param = {0.f};
-	float output_param = {0.f};
+	float input_param = {1.f};
+	float range_param = {1.f};
+	float output_param = {1.f};
 	float cv2_param = {0.f};
 	float offset_param = {0.f};
-	float tone_param = {0.f};
+	float tone_param = {1.f};
+	float cutoff = {20000.f};
 
 	// inputs XSIMD
 	b_float audio_input_batch[4] = {0.f};
-	b_float cv_1_input_batch[4] = {0.f};
-	b_float cv_out_input_batch[4] = {0.f};
-	b_float cv_2_input_batch[4] = {0.f};
-	b_float cv_bias_input_batch[4] = {0.f};
-	b_float cv_tone_input_batch[4] = {0.f};
-	b_float pitch_batch[4] = {0.f};
-	b_float cutoff_batch[4] = {0.f};
+
 	//b_float cutoff_batch[4] = {0.f};
 	float output_array[16] = {0.f};
 
@@ -119,49 +123,76 @@ struct M102XSIMD2 : Module {
 		input_param =	params[INPUT_PARAM].getValue();
 		range_param =	params[RANGE_PARAM].getValue();
 		output_param =	params[OUTPUT_PARAM].getValue();
-		cv2_param =		params[CV2_PARAM].getValue();
-		offset_param =	params[BIAS_PARAM].getValue() * 0.1f;
-		tone_param =	params[TONE_PARAM].getValue();
+		//cv2_param =		params[CV2_PARAM].getValue();
+		offset_param =	(inputs[CVBIAS_INPUT].getVoltageSum() + params[BIAS_PARAM].getValue()) * 0.2f;
+		//tone_param =	params[TONE_PARAM].getValue();
+
+		// Calculate Gain
+
+		if (inputs[CV2_INPUT].isConnected())
+		{
+			input_param += inputs[CV2_INPUT].getVoltageSum() * params[CV2_PARAM].getValue();
+		}
+
+		if (inputs[CV1_INPUT].isConnected())
+		{
+			input_param *= clamp(inputs[CV1_INPUT].getVoltageSum(), 0.f, 10.f) * 0.1f;
+		}
+		
+		// Calculate Cutoff
+		cutoff = params[TONE_PARAM].getValue();
+		cutoff = cutoff * 10.f - 5.f;
+		cutoff += inputs[CVTONE_INPUT].getVoltageSum();
+		cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff);
+		cutoff = clamp(cutoff, 20.f, 20000.f);
 
 		// Inputs Pointers
 		float* audio_voltage_ptr = 		inputs[AUDIO_INPUT].getVoltages();
-		//float* cv_1_voltage_ptr = 		inputs[CV1_INPUT].getVoltages();
-		//float* cv_out_voltage_ptr = 	inputs[CVOUT_INPUT].getVoltages();
-		//float* cv_2_voltage_ptr = 		inputs[CV2_INPUT].getVoltages();
-		//float* cv_bias_voltage_ptr = 	inputs[CVBIAS_INPUT].getVoltages();
-		float* cv_tone_voltage_ptr = 	inputs[CVTONE_INPUT].getVoltages();
 
-		// Cutoff calculation (MONO)
-		
 		// Polyphony loop
 		for (int c = 0; c < channels; c += batch_size)
 		{
 			// Calculate batch_index for oversampler
-			static const int batch_index = c / batch_size;
+			//static const int batch_index = c / batch_size; DON'T USE STATIC
+			const int batch_index = c / batch_size;
+
+			// Calculate Gain
+
+		//	// Calculate cutoff
+		//	if (inputs[CVTONE_INPUT].isConnected())
+		//	{
+		//		cutoff = tone_param + (inputs[CVTONE_INPUT].getVoltageSum() * 0.2f);
+		//		cutoff = 20.f * std::pow((20000.f / 20.f), cutoff);
+		//		cutoff = clamp(cutoff, 20.f, 20000.f);
+		//	}
+		//	else
+		//	{
+		//		cutoff = tone_param;
+		//		cutoff = 20.f * std::pow((20000.f / 20.f), cutoff);
+		//		cutoff = clamp(cutoff, 20.f, 20000.f);
+		//	}
+
 			
-			// Calculate cutoff
-			cv_tone_input_batch[batch_index] = xsimd::load_unaligned(&cv_tone_voltage_ptr[c]);
-			cutoff_batch[batch_index] = tone_param + cv_tone_input_batch[batch_index] * 0.2f;
-			cutoff_batch[batch_index] = 20.f * xsimd::pow(xsimd::broadcast(20000.f / 20.f), cutoff_batch[batch_index]);
 
-			20 + 
-
-			cutoff_batch[batch_index] = xsimd_clamp(cutoff_batch[batch_index], xsimd::broadcast(20.f), xsimd::broadcast(20000.f));
-
+			
 			audio_input_batch[batch_index] = xsimd::load_unaligned(&audio_voltage_ptr[c]);
-			diode_clipper[batch_index].setCircuitParams(xsimd::broadcast(input_param), xsimd::broadcast(offset_param), cutoff_batch[batch_index]);
-       		audio_input_batch[batch_index] *= 0.2f;
+			audio_input_batch[batch_index] *= 0.2f * range_param;
+			diode_clipper[batch_index].setCircuitParams(input_param, offset_param, cutoff);
+       		
 
 			oversample[batch_index].upsample(audio_input_batch[batch_index]);
 			b_float* osBuffer = oversample[batch_index].getOSBuffer();
+			
 			for (int i = 0; i < oversamplingRatio; ++i)
 			{
 				osBuffer[i] = diode_clipper[batch_index].processSample(osBuffer[i]);
-				osBuffer[i] += offset_param * 0.5f;
+				//osBuffer[i] *= 1.f;
 			}
 
-			audio_input_batch[batch_index] = 5.f * output_param * oversample[batch_index].downsample();
-			audio_input_batch[batch_index].store_aligned(&output_array[c]);
+			audio_input_batch[batch_index] = oversample[batch_index].downsample();
+			//audio_input_batch[batch_index] = oversample[batch_index].downsample() + (offset_param * 0.5f);
+			audio_input_batch[batch_index] *= 5.f * output_param;
+			audio_input_batch[batch_index].store_unaligned(&output_array[c]);
 			
 		}
 
@@ -176,22 +207,19 @@ struct M102XSIMD2 : Module {
 
 	void onSampleRateChange() override {
 		float newSampleRate = getSampleRate();
-		static const int batch_size = 4;
-		
 
-		for (int c = 0; c < batch_size; c++) {
-			static const int batch_index = c / batch_size;
-			oversample[batch_index].setOversamplingIndex(oversamplingIndex);
-			oversample[batch_index].reset(newSampleRate);
+		for (int c = 0; c < 4; c++) {
+			oversample[c].setOversamplingIndex(oversamplingIndex);
+			oversample[c].reset(newSampleRate);
 
-			diode_clipper[batch_index].setDiodeType(diode_type);
-			diode_clipper[batch_index].setCapacitorType(capacitor_type);
-			diode_clipper[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
-			diode_clipper[batch_index].reset();
+			diode_clipper[c].setDiodeType(diode_type);
+			diode_clipper[c].setCapacitorType(capacitor_type);
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+			diode_clipper[c].reset();
 
 			if (dc_blocker_active)
 			{
-				dc_blocker[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			}
 		}
 	}
@@ -200,22 +228,20 @@ struct M102XSIMD2 : Module {
         Module::onReset();
 
 		float newSampleRate = getSampleRate();
-		static const int batch_size = 4;
 
-		for (int c = 0; c < batch_size; c++)
+		for (int c = 0; c < 4; c++)
 		{
-			static const int batch_index = c / batch_size;
-			oversample[batch_index].setOversamplingIndex(oversamplingIndex);
-			oversample[batch_index].reset(newSampleRate);
+			oversample[c].setOversamplingIndex(oversamplingIndex);
+			oversample[c].reset(newSampleRate);
 
-			diode_clipper[batch_index].setDiodeType(diode_type);
-			diode_clipper[batch_index].setCapacitorType(capacitor_type);
-			diode_clipper[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
-			diode_clipper[batch_index].reset();
+			diode_clipper[c].setDiodeType(diode_type);
+			diode_clipper[c].setCapacitorType(capacitor_type);
+			diode_clipper[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+			diode_clipper[c].reset();
 
 			if (dc_blocker_active)
 			{
-				dc_blocker[batch_index].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
+				dc_blocker[c].setSampleRate(newSampleRate * oversample[0].getOversamplingRatio());
 			}
 		}
     }
