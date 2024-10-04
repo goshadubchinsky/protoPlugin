@@ -77,11 +77,16 @@ struct M102XSIMD2 : Module {
 
 	// params
 	float input_p = {1.f};
-	float cv_2_param = {1.f};
-	float range_param = {1.f};
-	float output_param = {1.f};
-	float offset_param = {0.f};
-	float cutoff = {20000.f};
+	float cv_2_p = {1.f};
+	float range_p = {1.f};
+	float output_p = {1.f};
+	float offset_p = {0.f};
+	float cutoff_p = {1000.f};
+	
+	float cutoff = {1000.f};
+	float input_gain = {1.f};
+	float offset = {0.f};
+	float output_gain = {1.f};
 
 	// inputs XSIMD
 	b_float audio_input_batch[4] = {0.f};
@@ -108,8 +113,21 @@ struct M102XSIMD2 : Module {
 	float maxAbsValue = 0.0f;
 	float batch_max = 0.0f;
 
+	int loop_counter = 0;
+	void processEvery4Samples(const ProcessArgs& args)
+	{
+		// Params (place these in different process to call only once in channels loop)
+		range_p = 	params[RANGE_PARAM].getValue();
+		input_p =		params[INPUT_PARAM].getValue();
+		output_p =	params[OUTPUT_PARAM].getValue();
+		offset_p =	params[BIAS_PARAM].getValue();
+		cv_2_p = 	params[CV2_PARAM].getValue();
+		cutoff_p = 		params[TONE_PARAM].getValue();
+		input_p *= 0.2f * range_p;
+	}
+
 	void process(const ProcessArgs& args) override {
-		
+
 		// Get XSIMD batch size
 		static const int batch_size = 4;
 
@@ -119,38 +137,45 @@ struct M102XSIMD2 : Module {
 		// Get number of polyphony
 		const int channels = inputs[AUDIO_INPUT].getChannels();
 
-		// Params (place these in different process to call only once in channels loop)
-
-		range_param = params[RANGE_PARAM].getValue();
-		input_p =	params[INPUT_PARAM].getValue();
-		range_param =	params[RANGE_PARAM].getValue();
-		output_param =	params[OUTPUT_PARAM].getValue() * 0.2f;
-		offset_param =	params[BIAS_PARAM].getValue() * 0.2f;
-		cv_2_param = params[CV2_PARAM].getValue();
-		cutoff = params[TONE_PARAM].getValue();
+		if (loopCounter-- == 0) {
+            loopCounter = 3;
+            processEvery4Samples(args);
+        }
 
 		// Calculate Gain
+		input_gain = input_p;
+
 		if (inputs[CV2_INPUT].isConnected())
 		{
-			input_p += inputs[CV2_INPUT].getVoltageSum() * cv_2_param;
+			input_gain += inputs[CV2_INPUT].getVoltageSum() * 0.04f * cv_2_p;
 		}
 
 		if (inputs[CV1_INPUT].isConnected())
 		{
-			input_p *= clamp(inputs[CV1_INPUT].getVoltageSum(), 0.f, 10.f) * 0.1f;
+			input_gain *= clamp(inputs[CV1_INPUT].getVoltageSum(), 0.f, 10.f) * 0.1f;
 		}
 
-		input_p *= 0.2f * range_param;
-
 		// Calculate Offset
-		offset_param += inputs[CVBIAS_INPUT].getVoltageSum();
+		offset = offset_p;
+		if (inputs[CVBIAS_INPUT].isConnected())
+		{
+			offset += inputs[CVBIAS_INPUT].getVoltageSum() * 0.2f;
+		}
 
 		// Calculate Output Gain
-		output_param = clamp(inputs[CVOUT_INPUT].getVoltageSum() + output_param, 0.f, 10.f);
-		
+		output_gain = output_p;
+		if (inputs[CVOUT_INPUT].isConnected())
+		{
+			//input_gain *= clamp(inputs[CV1_INPUT].getVoltageSum(), 0.f, 10.f) * 0.1f;
+			output_gain *= clamp(inputs[CVOUT_INPUT].getVoltageSum(), 0.f, 10.f) * 0.1f;
+		}
+
 		// Calculate Cutoff
-		cutoff = cutoff * 10.f - 5.f;
-		cutoff += inputs[CVTONE_INPUT].getVoltageSum();
+		cutoff = cutoff_p * 10.f - 5.f;
+		if (inputs[CVTONE_INPUT].isConnected())
+		{
+			cutoff += inputs[CVTONE_INPUT].getVoltageSum();
+		}
 		cutoff = dsp::FREQ_C4 * dsp::exp2_taylor5(cutoff);
 		cutoff = clamp(cutoff, 20.f, 20000.f);
 
@@ -168,8 +193,8 @@ struct M102XSIMD2 : Module {
 			//audio_input_batch[batch_index] *= 0.2f * range_param;
 
 			// Set diode class parameters
-			diode_clipper[batch_index].setCircuitParams(input_p, offset_param, cutoff);
-       		
+			diode_clipper[batch_index].setCircuitParams(input_gain, offset, cutoff);
+
 			// Oversample
 			oversample[batch_index].upsample(audio_input_batch[batch_index]);
 			b_float* osBuffer = oversample[batch_index].getOSBuffer();
@@ -180,12 +205,12 @@ struct M102XSIMD2 : Module {
 			}
 
 			audio_input_batch[batch_index] = oversample[batch_index].downsample();
-			audio_input_batch[batch_index] *= 5.f * output_param + (offset_param * 0.5f);
+			audio_input_batch[batch_index] *= 5.f * output_gain + (offset * 0.5f);
 			audio_input_batch[batch_index].store_unaligned(&output_array[c]);
 
 			batch_max = xsimd::reduce_max(xsimd::abs(audio_input_batch[batch_index]));
 			maxAbsValue = std::max(maxAbsValue, batch_max);
-			
+
 		}
 
 		for (int o = 0; o < channels; ++o)
