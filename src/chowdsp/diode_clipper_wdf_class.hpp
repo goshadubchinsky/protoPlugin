@@ -25,7 +25,7 @@ public:
         C1.reset();
     }
 
-    void setCircuitParams(T input_gain, float offset, T cutoff)  //input_gain 0, 30, 1
+    void setCircuitParams(float input_gain, float offset, float cutoff)  //input_gain 0, 30, 1
     {
         //constexpr auto Cap = 47.0e-9f; // 47 nF - Ceramic
         auto Cap = this->Cap; // 100 nF - Ceramic
@@ -44,7 +44,7 @@ public:
 
     inline T processSample(T x)
     {
-        x = applyInputGain(x+ this->offset);
+        x = applyInputGain(x + this->offset);
 
         Vs.setVoltage(x);
         dp.incident(P1.reflected());
@@ -104,7 +104,7 @@ public:
 
 private:
 
-    T Cap{100.0e-9};
+    float Cap{100.0e-9};
     T applyInputGain(T input)
     {
         //input *= this->input_gain * 1.5f * 1.104f;
@@ -113,7 +113,7 @@ private:
     }
 
     float sampleRate{44100.f};
-    T input_gain{1.f};
+    float input_gain{1.f};
     float offset{0.f};
     
     ResistorT<T> R1 { 4700.f };

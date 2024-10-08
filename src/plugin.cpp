@@ -10,7 +10,7 @@ void init(Plugin* p) {
 	// Add modules here
 	// p->addModel(modelMyModule);
 	 p->addModel(modelM102);
-	 p->addModel(modelM102XSIMD);
+	 //p->addModel(modelM102XSIMD);
 	 p->addModel(modelPROTO6);
 	 p->addModel(modelCEM3340);
 	 p->addModel(modelNeutron);

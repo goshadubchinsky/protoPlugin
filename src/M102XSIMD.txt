@@ -189,7 +189,7 @@ struct M102XSIMD : Module {
 			b_float* osBuffer = oversample[batch_index].getOSBuffer();
 			for (int i = 0; i < oversamplingRatio; ++i)
 			{
-				osBuffer[i] = diode_clipper[batch_index].processSample(input_batch[batch_index]);
+				osBuffer[i] = diode_clipper[batch_index].processSample(osBuffer[i]);
 				osBuffer[i] += offset_param * 0.5f;
 			}
 			//END OVERSAMPLING LOOP
