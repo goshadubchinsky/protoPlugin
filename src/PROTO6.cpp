@@ -1,6 +1,9 @@
 #include "plugin.hpp"
+#include <xsimd/xsimd.hpp>
 #include <cmath>
 #include "chowdsp/shared/VariableOversampling.hpp"
+
+using b_float = xsimd::batch<float>;
 
 float Transistor(float in, float gain) {
     // Calculate the exponential terms
@@ -147,6 +150,15 @@ struct PROTO6 : Module {
 	float input_0_B = {0.f};
 	float gain = {1.f};
 
+	float input_4;
+	float output_4;
+	float param_4;
+
+	b_float input_4_batch[4] = {0.f};
+	b_float input_4_gain_batch[4] = {0.f};
+
+	float output_array[16] = {0.f};
+
 	void onSampleRateChange() override {
         float newSampleRate = getSampleRate();
         oversample.reset(newSampleRate);
@@ -157,7 +169,11 @@ struct PROTO6 : Module {
         oversample.reset(getSampleRate());
     }
 
+	
+
 	void process(const ProcessArgs& args) override {
+
+		static const int batch_size = 4;
 		
 		if (inputs[IN1_INPUT].isConnected() && outputs[OUT1_OUTPUT].isConnected())
 		{
@@ -215,6 +231,40 @@ struct PROTO6 : Module {
         	    {osBuffer[k] = (float) tanh_Pade(osBuffer[k] * gain);}
         	float output = oversample.downsample();
 			outputs[OUT3_OUTPUT].setVoltage(output*5.f);
+		}
+
+		if (inputs[IN4_INPUT].isConnected())
+		{
+			
+			const int channels = inputs[IN4_INPUT].getChannels();
+			float* audio_voltage_ptr = 	inputs[IN4_INPUT].getVoltages();
+			float* cv_voltage_ptr = 	inputs[CV4_INPUT].getVoltages();
+			param_4 = params[PARAM4_PARAM].getValue();
+
+			for (int c = 0; c < channels; c += batch_size)
+			{
+				const int batch_index = c / batch_size;
+				input_4_batch[batch_index] = xsimd::load_unaligned(&audio_voltage_ptr[c]);
+				input_4_gain_batch[batch_index] = xsimd::load_unaligned(&cv_voltage_ptr[c]);
+				input_4_gain_batch[batch_index] *= param_4;
+				input_4_gain_batch[batch_index] *= 0.1f;
+				input_4_batch[batch_index] *= input_4_gain_batch[batch_index];
+				input_4_batch[batch_index].store_unaligned(&output_array[c]);
+				///outputs[OUT4_OUTPUT].setVoltage(audio_voltage_ptr[c], c);
+			}
+
+			for (int o = 0; o < channels; ++o)
+        {
+            outputs[OUT4_OUTPUT].setVoltage(output_array[o], o);
+        }
+
+			outputs[OUT4_OUTPUT].setChannels(channels);
+			//
+		}
+
+		if (inputs[IN5_INPUT].isConnected())
+		{
+			//
 		}
 	}
 
